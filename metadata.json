@@ -1,0 +1,6 @@
+{
+  "name": "SitePro - Road & Chain-Link Fence Site Measurement & BOQ Calculator",
+  "description": "Professional construction site measurement tool for chain-link fencing and road construction using GPS tracking, incremental post/layer logging, and automated material quantity estimation.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": []
+}

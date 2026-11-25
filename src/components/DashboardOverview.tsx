@@ -1,0 +1,549 @@
+import React, { useState } from 'react';
+import { ConstructionProject } from '../types';
+import { getProjectSettings, formatChainage } from '../utils/geo';
+import { exportProjectToExcel, exportProjectToPdf, exportChainLinkPdf, exportRoadPdf } from '../utils/export';
+import { AuditorVerificationModule } from './AuditorVerificationModule';
+import { SiteReportMap } from './SiteReportMap';
+import { 
+  Fence, 
+  Route, 
+  Layers, 
+  ArrowRight, 
+  ShieldCheck,
+  Settings,
+  Download,
+  FileSpreadsheet,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  ChevronDown,
+  MapPin
+} from 'lucide-react';
+
+interface DashboardOverviewProps {
+  project: ConstructionProject;
+  setActiveTab: (tab: 'audit' | 'overview') => void;
+  onUpdateProject: (updated: ConstructionProject) => void;
+  onOpenSettings: () => void;
+  currentGps?: { lat: number; lng: number; accuracy?: number };
+}
+
+export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
+  project,
+  setActiveTab,
+  onUpdateProject,
+  onOpenSettings,
+  currentGps,
+}) => {
+  const settings = getProjectSettings(project);
+  const { items, customItems } = settings;
+  const enabledCustom = customItems.filter(c => c.enabled);
+  const areaUnit = settings.unitSystem === 'imperial' ? 'ft²' : 'm²';
+  const lengthUnit = settings.unitSystem === 'imperial' ? 'ft' : 'm';
+
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const toggleSection = (key: string) => {
+    setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Fencing Calculations
+  const totalAnglePosts = project.fencePosts.filter(p => p.postType === 'angle_post').length;
+  const totalIntermediatePosts = project.fencePosts.filter(p => p.postType === 'intermediate_post').length;
+  const totalStrutPosts = project.fencePosts.filter(p => p.postType === 'strut_post').length;
+  const totalGatePosts = project.fencePosts.filter(p => p.postType === 'gate_post').length;
+  const totalPostsCount =
+    (items.anglePosts.enabled ? totalAnglePosts : 0) +
+    (items.intermediatePosts.enabled ? totalIntermediatePosts : 0) +
+    (items.strutPosts.enabled ? totalStrutPosts : 0) +
+    (items.gatePosts.enabled ? totalGatePosts : 0);
+
+  const postUnit = items.anglePosts.unit || items.intermediatePosts.unit || 'pcs';
+
+  const totalMeshLength = project.fenceMeshSegments.reduce((acc, curr) => acc + curr.lengthMeters, 0);
+  const totalRrmVolume = project.rrmWalls.reduce((acc, curr) => {
+    const avgWidth = (curr.topWidthMeters + curr.bottomWidthMeters) / 2;
+    return acc + (curr.lengthMeters * curr.heightMeters * avgWidth);
+  }, 0);
+
+  // Road Totals
+  const totalRoadLength = project.roadSections.reduce((acc, curr) => acc + curr.lengthMeters, 0);
+  const roadChainageStart = project.roadSections[0]?.chainageStart || '0+000';
+  const roadChainageEnd = project.roadSections[0]?.chainageEnd || formatChainage(totalRoadLength);
+  const totalRoadArea = project.roadSections.reduce((acc, curr) => acc + (curr.lengthMeters * curr.widthMeters), 0);
+  const roadWidth = project.roadSections[0]?.widthMeters ?? settings.defaultRoadWidth;
+  const totalSideDrain = project.roadSections.reduce((acc, curr) => acc + (curr.sideDrainLengthMeters || 0), 0);
+
+  const auditStatus = project.auditInfo?.auditStatus || 'pending';
+
+  const fencingCustom = enabledCustom.filter(c => c.category === 'fencing');
+  const roadAndGeneralCustom = enabledCustom.filter(c => c.category === 'road' || c.category === 'general');
+
+  const postBreakdownParts: string[] = [];
+  if (items.anglePosts.enabled) postBreakdownParts.push(`${totalAnglePosts} angle`);
+  if (items.intermediatePosts.enabled) postBreakdownParts.push(`${totalIntermediatePosts} intermed.`);
+  if (items.strutPosts.enabled) postBreakdownParts.push(`${totalStrutPosts} strut`);
+  if (items.gatePosts.enabled) postBreakdownParts.push(`${totalGatePosts} gate`);
+
+  return (
+    <div className="space-y-4 sm:space-y-6 pb-4">
+      
+      {/* Overview Header Card */}
+      <div className="bg-white rounded-2xl p-4 sm:p-8 border border-slate-200/90 flex flex-col lg:flex-row lg:items-center justify-between gap-5 sm:gap-6">
+        <div className="max-w-2xl">
+          <div className="text-xs font-semibold text-indigo-600 mb-1">
+            Site Overview &middot; Audit Summary
+          </div>
+          <h2 className="text-xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+            {project.name}
+          </h2>
+          <p className="text-slate-600 text-xs sm:text-sm leading-relaxed mt-1.5 sm:mt-2">
+            Review measured quantities across fencing and road works, sign off physical site verification, or customize predetermined units and necessary items.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('audit')}
+            className="min-h-[44px] px-4 sm:px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            <span>Open Auditor</span>
+            <ArrowRight className="w-4 h-4 hidden sm:inline" />
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="min-h-[44px] px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+          >
+            <Settings className="w-4 h-4" />
+            <span>Units &amp; Items</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => exportProjectToPdf(project)}
+            className="min-h-[44px] px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export PDF</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => exportProjectToExcel(project)}
+            className="min-h-[44px] px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <span>Excel</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Summary Metrics Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        
+        {/* Metric 1: Fence Posts */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('audit')}
+          className="text-left bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 hover:border-amber-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+        >
+          <div className="flex items-center justify-between gap-2 mb-2.5 sm:mb-3">
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">Total Fence Posts</span>
+            <div className="p-1.5 sm:p-2 rounded-xl bg-amber-50 text-amber-600 group-hover:bg-amber-500 group-hover:text-slate-950 transition shrink-0">
+              <Fence className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums mb-1">
+            {totalPostsCount} <span className="text-xs sm:text-sm font-medium text-slate-500">{postUnit}</span>
+          </div>
+          <div className="text-[11px] sm:text-xs text-slate-500 truncate tabular-nums">
+            {postBreakdownParts.length > 0 ? postBreakdownParts.join(' · ') : 'No post types active'}
+          </div>
+        </button>
+
+        {/* Metric 2: Mesh & RRM */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('audit')}
+          className="text-left bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 hover:border-amber-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+        >
+          <div className="flex items-center justify-between gap-2 mb-2.5 sm:mb-3">
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">Fence Mesh &amp; RRM</span>
+            <div className="p-1.5 sm:p-2 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition shrink-0">
+              <Layers className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums mb-1">
+            {totalMeshLength.toLocaleString()} <span className="text-xs sm:text-sm font-medium text-slate-500">{items.chainLinkMesh.unit}</span>
+          </div>
+          <div className="text-[11px] sm:text-xs text-slate-500 truncate tabular-nums">
+            RRM &middot; <span className="font-semibold text-slate-700">{totalRrmVolume.toFixed(1)} {items.rrmWall.unit}</span>
+          </div>
+        </button>
+
+        {/* Metric 3: Road Construction */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('audit')}
+          className="text-left bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 hover:border-amber-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+        >
+          <div className="flex items-center justify-between gap-2 mb-2.5 sm:mb-3">
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">Road Alignment</span>
+            <div className="p-1.5 sm:p-2 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition shrink-0">
+              <Route className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums mb-1">
+            {totalRoadLength.toLocaleString()} <span className="text-xs sm:text-sm font-medium text-slate-500">{items.roadMeasurement.unit}</span>
+          </div>
+          <div className="text-[11px] sm:text-xs text-slate-500 truncate tabular-nums">
+            Ch. <span className="font-mono font-semibold text-slate-700">{roadChainageStart}–{roadChainageEnd}</span> &middot; {totalRoadArea.toLocaleString()} {areaUnit}
+          </div>
+        </button>
+
+        {/* Metric 4: Audit Status */}
+        <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90">
+          <div className="flex items-center justify-between gap-2 mb-2.5 sm:mb-3">
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">Audit Status</span>
+            <div className={`p-1.5 sm:p-2 rounded-xl shrink-0 ${
+              auditStatus === 'fully_compliant'
+                ? 'bg-emerald-50 text-emerald-600'
+                : auditStatus === 'verified_with_variance'
+                ? 'bg-amber-50 text-amber-600'
+                : 'bg-slate-100 text-slate-600'
+            }`}>
+              {auditStatus === 'fully_compliant' ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : auditStatus === 'verified_with_variance' ? (
+                <AlertTriangle className="w-4 h-4" />
+              ) : (
+                <Clock className="w-4 h-4" />
+              )}
+            </div>
+          </div>
+          <div className="text-base sm:text-xl font-extrabold text-slate-900 mb-1 truncate">
+            {auditStatus === 'fully_compliant'
+              ? 'Fully Compliant'
+              : auditStatus === 'verified_with_variance'
+              ? 'Variance Noted'
+              : 'Pending Audit'}
+          </div>
+          <div className="text-[11px] sm:text-xs text-slate-500 truncate">
+            {project.auditInfo?.auditorName || 'No auditor assigned yet'}
+          </div>
+        </div>
+
+      </div>
+
+      {/* Quick Summary Breakdown Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
+        
+        {/* Chain-Link Fence Material Breakdown */}
+        <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2">
+            <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={() => toggleSection('fencingBreakdown')}
+                aria-expanded={!collapsedSections.fencingBreakdown}
+                className="flex items-center gap-3 text-left min-w-0 flex-1 group"
+              >
+                <div className="p-2 bg-amber-50 text-amber-700 rounded-xl flex-shrink-0">
+                  <Fence className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
+                    Chain-Link &amp; Fencing Breakdown
+                  </h3>
+                  {collapsedSections.fencingBreakdown && (
+                    <p className="text-xs text-slate-500 tabular-nums truncate">
+                      {totalPostsCount} {postUnit} &middot; {totalMeshLength.toLocaleString()} {items.chainLinkMesh.unit} mesh &middot; {totalRrmVolume.toFixed(1)} {items.rrmWall.unit} RRM
+                    </p>
+                  )}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => toggleSection('fencingBreakdown')}
+                aria-expanded={!collapsedSections.fencingBreakdown}
+                aria-label="Toggle Chain-Link & Fencing Breakdown"
+                className="sm:hidden w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
+              >
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.fencingBreakdown ? '-rotate-90' : 'rotate-0'}`}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0 pl-11 sm:pl-0">
+              <button
+                type="button"
+                onClick={() => exportChainLinkPdf(project)}
+                className="min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
+              >
+                PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('audit')}
+                className="min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-indigo-600 hover:text-indigo-700 px-2 py-1.5 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+              >
+                <span>Measure</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleSection('fencingBreakdown')}
+                aria-expanded={!collapsedSections.fencingBreakdown}
+                aria-label="Toggle Chain-Link & Fencing Breakdown"
+                className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 items-center justify-center transition"
+              >
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.fencingBreakdown ? '-rotate-90' : 'rotate-0'}`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {!collapsedSections.fencingBreakdown && (
+            <div className="divide-y divide-slate-100 mt-4">
+              {items.anglePosts.enabled && (
+                <div className="flex justify-between items-center py-2.5 text-sm">
+                  <span className="text-slate-600">Angle Posts (Corner / End)</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{totalAnglePosts} {items.anglePosts.unit}</span>
+                </div>
+              )}
+              {items.intermediatePosts.enabled && (
+                <div className="flex justify-between items-center py-2.5 text-sm">
+                  <span className="text-slate-600">Intermediate Posts</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{totalIntermediatePosts} {items.intermediatePosts.unit}</span>
+                </div>
+              )}
+              {items.strutPosts.enabled && (
+                <div className="flex justify-between items-center py-2.5 text-sm">
+                  <span className="text-slate-600">Strut Posts</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{totalStrutPosts} {items.strutPosts.unit}</span>
+                </div>
+              )}
+              {items.gatePosts.enabled && (
+                <div className="flex justify-between items-center py-2.5 text-sm">
+                  <span className="text-slate-600">Gate Posts</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{totalGatePosts} {items.gatePosts.unit}</span>
+                </div>
+              )}
+              {items.chainLinkMesh.enabled && (
+                <div className="flex justify-between items-center py-2.5 text-sm">
+                  <span className="text-slate-600">Chain-Link Mesh Length</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{totalMeshLength.toLocaleString()} {items.chainLinkMesh.unit}</span>
+                </div>
+              )}
+              {items.rrmWall.enabled && (
+                <div className="flex justify-between items-center py-2.5 text-sm">
+                  <span className="text-slate-600">RRM Plinth Wall Masonry Volume</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{totalRrmVolume.toFixed(2)} {items.rrmWall.unit}</span>
+                </div>
+              )}
+              {fencingCustom.map((c) => (
+                <div key={c.id} className="flex justify-between items-center py-2.5 text-sm">
+                  <span className="text-slate-600">{c.name}</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{c.quantity} {c.unit}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Road Construction & General Items Breakdown */}
+        <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2">
+            <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={() => toggleSection('roadBreakdown')}
+                aria-expanded={!collapsedSections.roadBreakdown}
+                className="flex items-center gap-3 text-left min-w-0 flex-1 group"
+              >
+                <div className="p-2 bg-emerald-50 text-emerald-700 rounded-xl flex-shrink-0">
+                  <Route className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
+                    Road &amp; Additional Site Items
+                  </h3>
+                  {collapsedSections.roadBreakdown && (
+                    <p className="text-xs text-slate-500 tabular-nums truncate">
+                      Ch. {roadChainageStart}–{roadChainageEnd} &middot; {totalRoadLength.toLocaleString()} {items.roadMeasurement.unit} &middot; {totalRoadArea.toLocaleString()} {areaUnit} &middot; Drain: {totalSideDrain.toLocaleString()} {items.sideDrain.unit}
+                    </p>
+                  )}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => toggleSection('roadBreakdown')}
+                aria-expanded={!collapsedSections.roadBreakdown}
+                aria-label="Toggle Road & Additional Site Items"
+                className="sm:hidden w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
+              >
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.roadBreakdown ? '-rotate-90' : 'rotate-0'}`}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0 pl-11 sm:pl-0">
+              <button
+                type="button"
+                onClick={() => exportRoadPdf(project)}
+                className="min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
+              >
+                PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('audit')}
+                className="min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-indigo-600 hover:text-indigo-700 px-2 py-1.5 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+              >
+                <span>Measure</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleSection('roadBreakdown')}
+                aria-expanded={!collapsedSections.roadBreakdown}
+                aria-label="Toggle Road & Additional Site Items"
+                className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 items-center justify-center transition"
+              >
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.roadBreakdown ? '-rotate-90' : 'rotate-0'}`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {!collapsedSections.roadBreakdown && (
+            <div className="divide-y divide-slate-100 mt-4">
+              {items.roadMeasurement.enabled && (
+                <>
+                  <div className="flex justify-between items-center py-2.5 text-sm">
+                    <span className="text-slate-600">Road Chainage</span>
+                    <span className="font-bold font-mono text-slate-900 tabular-nums">{roadChainageStart} &rarr; {roadChainageEnd}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5 text-sm">
+                    <span className="text-slate-600">Road Alignment Length</span>
+                    <span className="font-bold text-slate-900 tabular-nums">{totalRoadLength.toLocaleString()} {items.roadMeasurement.unit}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5 text-sm">
+                    <span className="text-slate-600">Road Breadth / Width</span>
+                    <span className="font-bold text-slate-900 tabular-nums">{roadWidth} {lengthUnit}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5 text-sm">
+                    <span className="text-slate-600">Total Road Surface Area</span>
+                    <span className="font-bold text-emerald-700 tabular-nums">{totalRoadArea.toLocaleString()} {areaUnit}</span>
+                  </div>
+                </>
+              )}
+              {items.sideDrain.enabled && (
+                <div className="flex justify-between items-center py-2.5 text-sm">
+                  <span className="text-slate-600">Road Side Drain Length</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{totalSideDrain.toLocaleString()} {items.sideDrain.unit}</span>
+                </div>
+              )}
+              {roadAndGeneralCustom.map((c) => (
+                <div key={c.id} className="flex justify-between items-center py-2.5 text-sm">
+                  <span className="text-slate-600">{c.name}</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{c.quantity} {c.unit}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* Site Location & Accurate Report Map */}
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => toggleSection('reportMap')}
+            aria-expanded={!collapsedSections.reportMap}
+            className="flex items-center gap-3 text-left min-w-0 flex-1 group"
+          >
+            <div className="p-2 bg-rose-50 text-rose-600 rounded-xl flex-shrink-0">
+              <MapPin className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
+                Site Location &amp; Accurate Report Map
+              </h3>
+              <p className="text-xs text-slate-500 truncate mt-0.5">
+                {project.siteCoordinates
+                  ? `${project.siteCoordinates.lat.toFixed(6)}°, ${project.siteCoordinates.lng.toFixed(6)}° · Included in PDF exports`
+                  : project.location
+                  ? `${project.location} · Pin exact coordinates for PDF report map`
+                  : 'Search address, lock GPS, or tap map to embed accurate map in PDF exports'}
+              </p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => toggleSection('reportMap')}
+            aria-expanded={!collapsedSections.reportMap}
+            aria-label="Toggle Site Location & Accurate Report Map"
+            className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
+          >
+            <ChevronDown
+              className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.reportMap ? '-rotate-90' : 'rotate-0'}`}
+            />
+          </button>
+        </div>
+
+        {!collapsedSections.reportMap && (
+          <div className="mt-4">
+            <SiteReportMap
+              project={project}
+              currentGps={currentGps}
+              onUpdateProject={onUpdateProject}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Auditor Verification & Inspection Section on Overview */}
+      <div className="pt-1 space-y-3">
+        <button
+          type="button"
+          onClick={() => toggleSection('auditorRecord')}
+          aria-expanded={!collapsedSections.auditorRecord}
+          className="w-full min-h-[44px] flex items-center justify-between gap-2 text-slate-700 hover:text-slate-900 text-xs font-bold py-1 group"
+        >
+          <span className="inline-flex items-center gap-2 text-left">
+            <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span>Auditor Verification &amp; Site Inspection Record</span>
+          </span>
+          <span className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg bg-white border border-slate-200 group-hover:bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 transition">
+            <ChevronDown
+              className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.auditorRecord ? '-rotate-90' : 'rotate-0'}`}
+            />
+          </span>
+        </button>
+
+        {!collapsedSections.auditorRecord && (
+          <AuditorVerificationModule
+            key={project.id}
+            project={project}
+            onUpdateProject={onUpdateProject}
+            embedded
+          />
+        )}
+      </div>
+
+    </div>
+  );
+};
