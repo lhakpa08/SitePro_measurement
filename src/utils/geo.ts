@@ -62,6 +62,7 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   defaultMeshHeight: 2.0,
   defaultRoadWidth: 7.5,
   defaultRrmHeight: 0.6,
+  compactMode: false,
   items: {
     anglePosts: { enabled: true, label: 'Angle Posts (Corner / End)', unit: 'pcs' },
     intermediatePosts: { enabled: true, label: 'Intermediate Posts', unit: 'pcs' },
@@ -100,6 +101,7 @@ export function getProjectSettings(project: ConstructionProject): ProjectSetting
     defaultMeshHeight: s.defaultMeshHeight ?? 2.0,
     defaultRoadWidth: s.defaultRoadWidth ?? 7.5,
     defaultRrmHeight: s.defaultRrmHeight ?? 0.6,
+    compactMode: s.compactMode ?? false,
     items: {
       anglePosts: { ...DEFAULT_PROJECT_SETTINGS.items.anglePosts, ...s.items?.anglePosts },
       intermediatePosts: { ...DEFAULT_PROJECT_SETTINGS.items.intermediatePosts, ...s.items?.intermediatePosts },

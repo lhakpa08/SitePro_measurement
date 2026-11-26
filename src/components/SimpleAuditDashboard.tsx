@@ -119,22 +119,41 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   // Mesh, RRM, Road, Side Drain
   const totalMeshLength = project.fenceMeshSegments.reduce((a, c) => a + c.lengthMeters, 0);
   const meshWidth = project.fenceMeshSegments[0]?.meshHeightMeters ?? settings.defaultMeshHeight;
+  const rrmSec = project.rrmWalls[0];
+  const rrmHeightEntries = rrmSec?.heightEntries ?? [rrmSec?.heightMeters ?? settings.defaultRrmHeight];
+  const rrmHeight = rrmHeightEntries.length > 0 ? rrmHeightEntries.reduce((a, b) => a + b, 0) / rrmHeightEntries.length : (rrmSec?.heightMeters ?? settings.defaultRrmHeight);
+
+  const rrmTopWidthEntries = rrmSec?.topWidthEntries ?? [rrmSec?.topWidthMeters ?? 0.38];
+  const rrmTopWidth = rrmTopWidthEntries.length > 0 ? rrmTopWidthEntries.reduce((a, b) => a + b, 0) / rrmTopWidthEntries.length : 0.38;
+
+  const rrmBotWidthEntries = rrmSec?.bottomWidthEntries ?? [rrmSec?.bottomWidthMeters ?? 0.38];
+  const rrmBotWidth = rrmBotWidthEntries.length > 0 ? rrmBotWidthEntries.reduce((a, b) => a + b, 0) / rrmBotWidthEntries.length : 0.38;
+
+  const rrmWidth = Number(((rrmTopWidth + rrmBotWidth) / 2).toFixed(2));
   const rrmLen = Number(project.rrmWalls.reduce((a, c) => a + c.lengthMeters, 0).toFixed(2));
-  const rrmWidth = project.rrmWalls[0]
-    ? Number((((project.rrmWalls[0].topWidthMeters + project.rrmWalls[0].bottomWidthMeters) / 2)).toFixed(2))
-    : 0.38;
-  const rrmHeight = project.rrmWalls[0]?.heightMeters ?? settings.defaultRrmHeight;
   const totalRrmVol = project.rrmWalls.reduce(
-    (a, c) => a + c.lengthMeters * c.heightMeters * ((c.topWidthMeters + c.bottomWidthMeters) / 2),
+    (a, c) => {
+      const topW = (c.topWidthEntries && c.topWidthEntries.length > 0) ? c.topWidthEntries.reduce((x, y) => x + y, 0) / c.topWidthEntries.length : c.topWidthMeters;
+      const botW = (c.bottomWidthEntries && c.bottomWidthEntries.length > 0) ? c.bottomWidthEntries.reduce((x, y) => x + y, 0) / c.bottomWidthEntries.length : c.bottomWidthMeters;
+      const h = (c.heightEntries && c.heightEntries.length > 0) ? c.heightEntries.reduce((x, y) => x + y, 0) / c.heightEntries.length : c.heightMeters;
+      return a + c.lengthMeters * h * ((topW + botW) / 2);
+    },
     0
   );
+
+  const roadSec = project.roadSections[0];
   const roadLen = project.roadSections.reduce((a, c) => a + c.lengthMeters, 0);
-  const roadChainageStart = project.roadSections[0]?.chainageStart ?? '0+000';
-  const roadChainageEnd = project.roadSections[0]?.chainageEnd ?? formatChainage(roadLen);
-  const roadStartGps = project.roadSections[0]?.startGps;
-  const roadEndGps = project.roadSections[0]?.endGps;
-  const roadWidth = project.roadSections[0]?.widthMeters ?? settings.defaultRoadWidth;
-  const roadDepth = project.roadSections[0]?.earthworkCutDepthMeters ?? 0;
+  const roadChainageStart = roadSec?.chainageStart ?? '0+000';
+  const roadChainageEnd = roadSec?.chainageEnd ?? formatChainage(roadLen);
+  const roadStartGps = roadSec?.startGps;
+  const roadEndGps = roadSec?.endGps;
+
+  const roadWidthEntries = roadSec?.widthEntries ?? [roadSec?.widthMeters ?? settings.defaultRoadWidth];
+  const roadWidth = roadWidthEntries.length > 0 ? roadWidthEntries.reduce((a, b) => a + b, 0) / roadWidthEntries.length : (roadSec?.widthMeters ?? settings.defaultRoadWidth);
+
+  const roadDepthEntries = roadSec?.depthEntries ?? [roadSec?.earthworkCutDepthMeters ?? 0];
+  const roadDepth = roadDepthEntries.length > 0 ? roadDepthEntries.reduce((a, b) => a + b, 0) / roadDepthEntries.length : (roadSec?.earthworkCutDepthMeters ?? 0);
+
   const sideDrainLen = project.roadSections.reduce((a, c) => a + (c.sideDrainLengthMeters || 0), 0);
 
   const handleAdjustPost = (postType: PostType, delta: number) => {
@@ -351,6 +370,68 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     const current = ensureRoadSection();
     current[0] = { ...current[0], earthworkCutDepthMeters: safeD };
     updateCounts({ roadSections: current });
+  };
+
+  const handleSetRoadWidthEntries = (inputStr: string) => {
+    const parsed = inputStr
+      .split(/[,,\s]+/)
+      .map(s => parseFloat(s.trim()))
+      .filter(n => !isNaN(n) && n >= 0);
+    const avg = parsed.length > 0 ? parsed.reduce((a, b) => a + b, 0) / parsed.length : settings.defaultRoadWidth;
+    const current = ensureRoadSection();
+    current[0] = {
+      ...current[0],
+      widthMeters: Number(avg.toFixed(2)),
+      widthEntries: parsed.length > 0 ? parsed : undefined,
+    };
+    updateCounts({ roadSections: current });
+  };
+
+  const handleSetRoadDepthEntries = (inputStr: string) => {
+    const parsed = inputStr
+      .split(/[,,\s]+/)
+      .map(s => parseFloat(s.trim()))
+      .filter(n => !isNaN(n) && n >= 0);
+    const avg = parsed.length > 0 ? parsed.reduce((a, b) => a + b, 0) / parsed.length : 0;
+    const current = ensureRoadSection();
+    current[0] = {
+      ...current[0],
+      earthworkCutDepthMeters: Number(avg.toFixed(3)),
+      depthEntries: parsed.length > 0 ? parsed : undefined,
+    };
+    updateCounts({ roadSections: current });
+  };
+
+  const handleSetRrmWidthEntries = (inputStr: string) => {
+    const parsed = inputStr
+      .split(/[,,\s]+/)
+      .map(s => parseFloat(s.trim()))
+      .filter(n => !isNaN(n) && n >= 0);
+    const avg = parsed.length > 0 ? parsed.reduce((a, b) => a + b, 0) / parsed.length : 0.38;
+    const current = ensureRrmWall();
+    current[0] = {
+      ...current[0],
+      topWidthMeters: Number(avg.toFixed(2)),
+      bottomWidthMeters: Number(avg.toFixed(2)),
+      topWidthEntries: parsed.length > 0 ? parsed : undefined,
+      bottomWidthEntries: parsed.length > 0 ? parsed : undefined,
+    };
+    updateCounts({ rrmWalls: current });
+  };
+
+  const handleSetRrmHeightEntries = (inputStr: string) => {
+    const parsed = inputStr
+      .split(/[,,\s]+/)
+      .map(s => parseFloat(s.trim()))
+      .filter(n => !isNaN(n) && n >= 0);
+    const avg = parsed.length > 0 ? parsed.reduce((a, b) => a + b, 0) / parsed.length : settings.defaultRrmHeight;
+    const current = ensureRrmWall();
+    current[0] = {
+      ...current[0],
+      heightMeters: Number(avg.toFixed(2)),
+      heightEntries: parsed.length > 0 ? parsed : undefined,
+    };
+    updateCounts({ rrmWalls: current });
   };
 
   const handleCaptureRoadGps = (which: 'start' | 'end') => {
@@ -649,7 +730,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     <div className="space-y-4 sm:space-y-6 pb-4 max-w-4xl mx-auto">
       
       {/* Field Workstation Toolbar Card */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90 space-y-4 text-xs">
+      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90 space-y-4 text-[9px]">
         <div className="flex flex-col gap-3.5">
           <div className="min-w-0">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight truncate">
@@ -970,6 +1051,33 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       </button>
                     ))}
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Width Multi-Samples ({lengthUnit}) <span className="text-[10px] text-slate-400 font-normal">(Comma-separated)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 0.38, 0.40, 0.36"
+                        value={rrmSec?.topWidthEntries ? rrmSec.topWidthEntries.join(', ') : ''}
+                        onChange={(e) => handleSetRrmWidthEntries(e.target.value)}
+                        className={`${inputClass} font-mono`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Height Multi-Samples ({lengthUnit}) <span className="text-[10px] text-slate-400 font-normal">(Comma-separated)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 0.6, 0.65, 0.58"
+                        value={rrmSec?.heightEntries ? rrmSec.heightEntries.join(', ') : ''}
+                        onChange={(e) => handleSetRrmHeightEntries(e.target.value)}
+                        className={`${inputClass} font-mono`}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1109,6 +1217,33 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         +{step}{items.roadMeasurement.unit}<span className="hidden sm:inline"> Length</span>
                       </button>
                     ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Width Multi-Samples ({lengthUnit}) <span className="text-[10px] text-slate-400 font-normal">(Comma-separated chainage widths)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 3.5, 3.6, 3.4"
+                        value={roadSec?.widthEntries ? roadSec.widthEntries.join(', ') : ''}
+                        onChange={(e) => handleSetRoadWidthEntries(e.target.value)}
+                        className={`${inputClass} font-mono`}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Depth Multi-Samples ({lengthUnit}) <span className="text-[10px] text-slate-400 font-normal">(Comma-separated excavation depths)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 0.3, 0.35, 0.28"
+                        value={roadSec?.depthEntries ? roadSec.depthEntries.join(', ') : ''}
+                        onChange={(e) => handleSetRoadDepthEntries(e.target.value)}
+                        className={`${inputClass} font-mono`}
+                      />
+                    </div>
                   </div>
 
                   {/* Road Alignment GPS Capture */}

@@ -53,6 +53,13 @@ interface ReportMeasurements {
   sideDrainLen: number;
 }
 
+function getAverageOf(entries?: number[], fallback = 0): number {
+  if (!entries || entries.length === 0) return fallback;
+  const valid = entries.filter(n => !isNaN(n) && n >= 0);
+  if (valid.length === 0) return fallback;
+  return valid.reduce((a, b) => a + b, 0) / valid.length;
+}
+
 function computeMeasurements(project: ConstructionProject): ReportMeasurements {
   const settings = getProjectSettings(project);
   const { items } = settings;
@@ -77,22 +84,36 @@ function computeMeasurements(project: ConstructionProject): ReportMeasurements {
   const meshArea = meshLen * meshWidth;
 
   const rrmLen = project.rrmWalls.reduce((a, c) => a + c.lengthMeters, 0);
-  const rrmWidth = project.rrmWalls[0]
-    ? (project.rrmWalls[0].topWidthMeters + project.rrmWalls[0].bottomWidthMeters) / 2
-    : 0.38;
-  const rrmHeight = project.rrmWalls[0]?.heightMeters ?? settings.defaultRrmHeight;
+  const rrmWall0 = project.rrmWalls[0];
+  const rrmTopW = rrmWall0 ? getAverageOf(rrmWall0.topWidthEntries, rrmWall0.topWidthMeters) : 0.38;
+  const rrmBotW = rrmWall0 ? getAverageOf(rrmWall0.bottomWidthEntries, rrmWall0.bottomWidthMeters) : 0.38;
+  const rrmWidth = Number(((rrmTopW + rrmBotW) / 2).toFixed(2));
+  const rrmHeight = rrmWall0 ? getAverageOf(rrmWall0.heightEntries, rrmWall0.heightMeters) : settings.defaultRrmHeight;
   const rrmVol = project.rrmWalls.reduce(
-    (acc, c) => acc + c.lengthMeters * c.heightMeters * ((c.topWidthMeters + c.bottomWidthMeters) / 2),
+    (acc, c) => {
+      const topW = getAverageOf(c.topWidthEntries, c.topWidthMeters);
+      const botW = getAverageOf(c.bottomWidthEntries, c.bottomWidthMeters);
+      const h = getAverageOf(c.heightEntries, c.heightMeters);
+      return acc + c.lengthMeters * h * ((topW + botW) / 2);
+    },
     0
   );
 
   const roadLen = project.roadSections.reduce((a, c) => a + c.lengthMeters, 0);
   const chainageStart = project.roadSections[0]?.chainageStart || '0+000';
   const chainageEnd = project.roadSections[0]?.chainageEnd || formatChainage(roadLen);
-  const roadWidth = project.roadSections[0]?.widthMeters ?? settings.defaultRoadWidth;
-  const roadDepth = project.roadSections[0]?.earthworkCutDepthMeters ?? 0;
-  const roadArea = project.roadSections.reduce((acc, curr) => acc + curr.lengthMeters * curr.widthMeters, 0);
-  const roadVol = roadLen * roadWidth * roadDepth;
+  const roadSec0 = project.roadSections[0];
+  const roadWidth = roadSec0 ? getAverageOf(roadSec0.widthEntries, roadSec0.widthMeters ?? settings.defaultRoadWidth) : settings.defaultRoadWidth;
+  const roadDepth = roadSec0 ? getAverageOf(roadSec0.depthEntries, roadSec0.earthworkCutDepthMeters) : 0;
+  const roadArea = project.roadSections.reduce((acc, curr) => {
+    const w = getAverageOf(curr.widthEntries, curr.widthMeters);
+    return acc + curr.lengthMeters * w;
+  }, 0);
+  const roadVol = project.roadSections.reduce((acc, curr) => {
+    const w = getAverageOf(curr.widthEntries, curr.widthMeters);
+    const d = getAverageOf(curr.depthEntries, curr.earthworkCutDepthMeters);
+    return acc + curr.lengthMeters * w * d;
+  }, 0);
   const sideDrainLen = project.roadSections.reduce((acc, curr) => acc + (curr.sideDrainLengthMeters || 0), 0);
 
   return {

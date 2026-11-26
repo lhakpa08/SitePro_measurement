@@ -36,8 +36,11 @@ export interface RrmWallSegment {
   sectionName: string;
   lengthMeters: number;
   heightMeters: number;
+  heightEntries?: number[];
   topWidthMeters: number;
+  topWidthEntries?: number[];
   bottomWidthMeters: number;
+  bottomWidthEntries?: number[];
   notes?: string;
   createdAt: number;
 }
@@ -49,6 +52,7 @@ export interface RoadSectionEntry {
   sectionName: string;
   lengthMeters: number;
   widthMeters: number;
+  widthEntries?: number[];
   
   // Layers thicknesses in mm
   subBaseThicknessMm: number; // GSB
@@ -57,6 +61,7 @@ export interface RoadSectionEntry {
   acThicknessMm: number;      // Asphalt Concrete / DBM
   
   earthworkCutDepthMeters: number; // Excavation depth
+  depthEntries?: number[];
   sideDrainLengthMeters: number;
   startGps?: GpsCoordinate;
   endGps?: GpsCoordinate;
@@ -88,6 +93,7 @@ export interface ProjectSettings {
   defaultMeshHeight: number;
   defaultRoadWidth: number;
   defaultRrmHeight: number;
+  compactMode?: boolean;
   items: {
     anglePosts: StandardItemConfig;
     intermediatePosts: StandardItemConfig;

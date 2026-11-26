@@ -8,7 +8,9 @@ import {
   Building2,
   MapPin,
   LayoutDashboard,
-  Cloud
+  Cloud,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -38,6 +40,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentGps,
   onRequestGps,
 }) => {
+  const [isOnline, setIsOnline] = React.useState<boolean>(() => navigator.onLine);
+
+  React.useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   return (
     <>
       <header
@@ -93,6 +108,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                     : 'GPS'}
                 </span>
               </button>
+
+              <div
+                className={`hidden lg:inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium border ${
+                  isOnline
+                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                    : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                }`}
+                title={isOnline ? 'Online & Local Storage Synced' : 'Offline Mode (Local Storage Active)'}
+              >
+                {isOnline ? <Wifi className="w-3.5 h-3.5 text-emerald-400" /> : <WifiOff className="w-3.5 h-3.5 text-amber-400" />}
+                <span className="text-[11px] font-semibold">{isOnline ? 'Synced' : 'Offline'}</span>
+              </div>
 
               <button
                 type="button"

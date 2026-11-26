@@ -16,6 +16,7 @@ import {
   getProjectMapData,
   ReportMapType,
 } from '../utils/staticMap';
+import { getProjectSettings, formatChainage, parseChainage } from '../utils/geo';
 import {
   MapPin,
   Crosshair,
@@ -26,6 +27,10 @@ import {
   X,
   Trash2,
   AlertTriangle,
+  Eye,
+  EyeOff,
+  Ruler,
+  Target
 } from 'lucide-react';
 
 interface SiteReportMapProps {
@@ -68,6 +73,20 @@ function notifyQuotaIfNeeded(err: unknown) {
   ) {
     window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
   }
+}
+
+function calculateDistanceMeters(p1: GpsCoordinate, p2: GpsCoordinate): number {
+  const R = 6371e3; // Earth radius in meters
+  const dLat = (p2.lat - p1.lat) * (Math.PI / 180);
+  const dLon = (p2.lng - p1.lng) * (Math.PI / 180);
+  const lat1 = p1.lat * (Math.PI / 180);
+  const lat2 = p2.lat * (Math.PI / 180);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
 interface PlaceSearchBarProps {
@@ -198,12 +217,49 @@ const PlaceSearchBar: React.FC<PlaceSearchBarProps> = ({ onSelectPlace }) => {
   );
 };
 
+interface GpsAccuracyOverlayProps {
+  currentGps?: { lat: number; lng: number; accuracy?: number };
+  showAccuracyCircle: boolean;
+}
+
+const GpsAccuracyOverlay: React.FC<GpsAccuracyOverlayProps> = ({ currentGps, showAccuracyCircle }) => {
+  const map = useMap();
+  const mapsLib = useMapsLibrary('maps');
+
+  useEffect(() => {
+    if (!map || !mapsLib || !currentGps || !showAccuracyCircle) return;
+
+    const radius = currentGps.accuracy ?? 15; // meters
+    const circle = new mapsLib.Circle({
+      map,
+      center: { lat: currentGps.lat, lng: currentGps.lng },
+      radius,
+      fillColor: '#0ea5e9',
+      fillOpacity: 0.22,
+      strokeColor: '#0284c7',
+      strokeOpacity: 0.9,
+      strokeWeight: 1.5,
+    });
+
+    return () => {
+      circle.setMap(null);
+    };
+  }, [map, mapsLib, currentGps, showAccuracyCircle]);
+
+  return null;
+};
+
 interface MapOverlaysProps {
   roadStart?: GpsCoordinate;
   roadEnd?: GpsCoordinate;
   gpsPosts: Array<FencePostEntry & { gps: GpsCoordinate }>;
   allPoints: GpsCoordinate[];
   fitTrigger: number;
+  showRoadPolyline: boolean;
+  showFencePolyline: boolean;
+  measurePoints?: GpsCoordinate[];
+  currentGps?: { lat: number; lng: number; accuracy?: number };
+  showAccuracyCircle: boolean;
 }
 
 const MapOverlays: React.FC<MapOverlaysProps> = ({
@@ -212,18 +268,23 @@ const MapOverlays: React.FC<MapOverlaysProps> = ({
   gpsPosts,
   allPoints,
   fitTrigger,
+  showRoadPolyline,
+  showFencePolyline,
+  measurePoints,
+  currentGps,
+  showAccuracyCircle,
 }) => {
   const map = useMap();
   const mapsLib = useMapsLibrary('maps');
   const coreLib = useMapsLibrary('core');
 
-  // Draw road alignment polyline and fence posts polyline
+  // Draw road alignment polyline, fence posts sequence polyline, and distance measurement line
   useEffect(() => {
     if (!map || !mapsLib) return;
 
     const polylines: google.maps.Polyline[] = [];
 
-    if (roadStart && roadEnd) {
+    if (showRoadPolyline && roadStart && roadEnd) {
       polylines.push(
         new mapsLib.Polyline({
           map,
@@ -233,20 +294,36 @@ const MapOverlays: React.FC<MapOverlaysProps> = ({
           ],
           strokeColor: '#059669',
           strokeOpacity: 0.95,
-          strokeWeight: 4,
+          strokeWeight: 4.5,
           geodesic: true,
         })
       );
     }
 
-    if (gpsPosts.length >= 2) {
+    if (showFencePolyline && gpsPosts.length >= 2) {
       polylines.push(
         new mapsLib.Polyline({
           map,
           path: gpsPosts.map((p) => ({ lat: p.gps.lat, lng: p.gps.lng })),
           strokeColor: '#d97706',
-          strokeOpacity: 0.85,
-          strokeWeight: 3,
+          strokeOpacity: 0.9,
+          strokeWeight: 3.5,
+          geodesic: true,
+        })
+      );
+    }
+
+    if (measurePoints && measurePoints.length === 2) {
+      polylines.push(
+        new mapsLib.Polyline({
+          map,
+          path: [
+            { lat: measurePoints[0].lat, lng: measurePoints[0].lng },
+            { lat: measurePoints[1].lat, lng: measurePoints[1].lng },
+          ],
+          strokeColor: '#7c3aed',
+          strokeOpacity: 0.95,
+          strokeWeight: 4,
           geodesic: true,
         })
       );
@@ -255,7 +332,7 @@ const MapOverlays: React.FC<MapOverlaysProps> = ({
     return () => {
       polylines.forEach((line) => line.setMap(null));
     };
-  }, [map, mapsLib, roadStart, roadEnd, gpsPosts]);
+  }, [map, mapsLib, roadStart, roadEnd, gpsPosts, showRoadPolyline, showFencePolyline, measurePoints]);
 
   // Fit bounds when requested or when points change significantly
   const pointsSignature = allPoints
@@ -279,7 +356,7 @@ const MapOverlays: React.FC<MapOverlaysProps> = ({
     map.fitBounds(bounds, { top: 48, right: 48, bottom: 48, left: 48 });
   }, [map, coreLib, pointsSignature, fitTrigger]);
 
-  return null;
+  return <GpsAccuracyOverlay currentGps={currentGps} showAccuracyCircle={showAccuracyCircle} />;
 };
 
 interface InteractivePinMarkerProps {
@@ -351,10 +428,24 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
   onUpdateProject,
 }) => {
   const apiKey = getGoogleMapsApiKey();
-  const [mapType, setMapType] = useState<ReportMapType>('hybrid');
+  const settings = getProjectSettings(project);
+  const isImperial = settings.unitSystem === 'imperial';
+  const lengthUnit = isImperial ? 'ft' : 'm';
+  const unitFactor = isImperial ? 3.28084 : 1.0;
+
+  const [mapType, setMapType] = useState<ReportMapType>('satellite');
+  const [showAccuracyCircle, setShowAccuracyCircle] = useState<boolean>(true);
   const [pinMode, setPinMode] = useState<PinMode>('browse');
   const [fitTrigger, setFitTrigger] = useState(0);
   const [activeInfo, setActiveInfo] = useState<ActiveInfo | null>(null);
+
+  // Distance Measurement Tool State
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [measurePoints, setMeasurePoints] = useState<GpsCoordinate[]>([]);
+
+  // Polyline visualization toggles
+  const [showRoadPolyline, setShowRoadPolyline] = useState<boolean>(true);
+  const [showFencePolyline, setShowFencePolyline] = useState<boolean>(true);
 
   const mapData = useMemo(() => getProjectMapData(project, 'all'), [project]);
   const roadSection = project.roadSections[0];
@@ -432,15 +523,100 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
     [project, onUpdateProject]
   );
 
+  const measuredDistanceMeters = useMemo(() => {
+    if (measurePoints.length !== 2) return 0;
+    return calculateDistanceMeters(measurePoints[0], measurePoints[1]);
+  }, [measurePoints]);
+
+  const measuredDisplayValue = Number((measuredDistanceMeters * unitFactor).toFixed(2));
+
+  const handleApplyMeasuredToRoad = () => {
+    if (measurePoints.length !== 2) return;
+    const baseSections =
+      project.roadSections.length > 0
+        ? [...project.roadSections]
+        : [
+            {
+              id: `road-${Date.now()}`,
+              sectionName: 'Access Road Alignment',
+              chainageStart: '0+000',
+              chainageEnd: formatChainage(measuredDisplayValue),
+              lengthMeters: measuredDisplayValue,
+              widthMeters: settings.defaultRoadWidth,
+              subBaseThicknessMm: 150,
+              wmmThicknessMm: 200,
+              primeCoatRequired: true,
+              acThicknessMm: 50,
+              earthworkCutDepthMeters: 0,
+              sideDrainLengthMeters: 0,
+              createdAt: Date.now(),
+            },
+          ];
+    const startNum = parseChainage(baseSections[0].chainageStart) ?? 0;
+    baseSections[0] = {
+      ...baseSections[0],
+      lengthMeters: measuredDisplayValue,
+      chainageEnd: formatChainage(startNum + measuredDisplayValue),
+    };
+    onUpdateProject({
+      ...project,
+      roadSections: baseSections,
+      updatedAt: Date.now(),
+    });
+    setIsMeasuring(false);
+    setMeasurePoints([]);
+  };
+
+  const handleApplyMeasuredToFence = () => {
+    if (measurePoints.length !== 2) return;
+    const baseSegments =
+      project.fenceMeshSegments.length > 0
+        ? [...project.fenceMeshSegments]
+        : [
+            {
+              id: `mesh-${Date.now()}`,
+              segmentName: 'Main Boundary Span',
+              lengthMeters: measuredDisplayValue,
+              meshHeightMeters: settings.defaultMeshHeight,
+              meshGauge: '10 Gauge',
+              barbedWireStrands: 3,
+              hasTensionWire: true,
+              createdAt: Date.now(),
+            },
+          ];
+    baseSegments[0] = {
+      ...baseSegments[0],
+      lengthMeters: measuredDisplayValue,
+    };
+    onUpdateProject({
+      ...project,
+      fenceMeshSegments: baseSegments,
+      updatedAt: Date.now(),
+    });
+    setIsMeasuring(false);
+    setMeasurePoints([]);
+  };
+
   const handleMapClick = (ev: MapMouseEvent) => {
     setActiveInfo(null);
-    if (pinMode === 'browse' || !ev.detail.latLng) return;
+    if (!ev.detail.latLng) return;
 
     const coords: GpsCoordinate = {
       lat: ev.detail.latLng.lat,
       lng: ev.detail.latLng.lng,
       timestamp: Date.now(),
     };
+
+    if (isMeasuring) {
+      if (measurePoints.length === 0 || measurePoints.length === 2) {
+        setMeasurePoints([coords]);
+      } else if (measurePoints.length === 1) {
+        setMeasurePoints([measurePoints[0], coords]);
+      }
+      return;
+    }
+
+    if (pinMode === 'browse') return;
 
     if (pinMode === 'site') {
       applySitePin(coords, undefined, 'pin');
@@ -504,7 +680,29 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
 
             <button
               type="button"
-              onClick={() => setPinMode(pinMode === 'site' ? 'browse' : 'site')}
+              onClick={() => {
+                setIsMeasuring(!isMeasuring);
+                if (!isMeasuring) {
+                  setPinMode('browse');
+                  setMeasurePoints([]);
+                }
+              }}
+              className={`min-h-[44px] sm:min-h-[38px] px-3 py-2 text-xs font-semibold rounded-xl border inline-flex items-center gap-1.5 transition whitespace-nowrap ${
+                isMeasuring
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+              }`}
+            >
+              <Ruler className="w-3.5 h-3.5" />
+              <span>{isMeasuring ? 'Measuring Active' : 'Measure Distance'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setPinMode(pinMode === 'site' ? 'browse' : 'site');
+                if (pinMode !== 'site') setIsMeasuring(false);
+              }}
               className={`min-h-[44px] sm:min-h-[38px] px-3 py-2 text-xs font-semibold rounded-xl border inline-flex items-center gap-1.5 transition whitespace-nowrap ${
                 pinMode === 'site'
                   ? 'bg-rose-600 text-white border-rose-600'
@@ -517,7 +715,10 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
 
             <button
               type="button"
-              onClick={() => setPinMode(pinMode === 'road_start' ? 'browse' : 'road_start')}
+              onClick={() => {
+                setPinMode(pinMode === 'road_start' ? 'browse' : 'road_start');
+                if (pinMode !== 'road_start') setIsMeasuring(false);
+              }}
               className={`min-h-[44px] sm:min-h-[38px] px-3 py-2 text-xs font-semibold rounded-xl border inline-flex items-center gap-1.5 transition whitespace-nowrap ${
                 pinMode === 'road_start'
                   ? 'bg-emerald-600 text-white border-emerald-600'
@@ -530,7 +731,10 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
 
             <button
               type="button"
-              onClick={() => setPinMode(pinMode === 'road_end' ? 'browse' : 'road_end')}
+              onClick={() => {
+                setPinMode(pinMode === 'road_end' ? 'browse' : 'road_end');
+                if (pinMode !== 'road_end') setIsMeasuring(false);
+              }}
               className={`min-h-[44px] sm:min-h-[38px] px-3 py-2 text-xs font-semibold rounded-xl border inline-flex items-center gap-1.5 transition whitespace-nowrap ${
                 pinMode === 'road_end'
                   ? 'bg-emerald-600 text-white border-emerald-600'
@@ -555,29 +759,141 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
           </div>
         </div>
 
-        {/* Map Type & Pin Prompt Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-            {(['hybrid', 'satellite', 'roadmap', 'terrain'] as ReportMapType[]).map((t) => (
+        {/* Distance Measurement Active Floating Card */}
+        {isMeasuring && (
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-purple-600 text-white rounded-lg shrink-0">
+                <Ruler className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="font-bold text-purple-900">
+                  {measurePoints.length === 0
+                    ? 'Distance Tool: Click Point 1 on map'
+                    : measurePoints.length === 1
+                    ? 'Point 1 set. Click Point 2 on map to measure distance.'
+                    : `Measured Distance: ${measuredDisplayValue.toLocaleString()} ${lengthUnit}`}
+                </div>
+                <div className="text-purple-700 text-[11px] mt-0.5">
+                  {measurePoints.length === 2
+                    ? 'Apply measured distance directly to road length or fence mesh planning.'
+                    : 'Real-time geodetic distance calculation for road & fence planning.'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {measurePoints.length === 2 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleApplyMeasuredToRoad}
+                    className="min-h-[36px] px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition"
+                  >
+                    Apply to Road ({measuredDisplayValue} {lengthUnit})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyMeasuredToFence}
+                    className="min-h-[36px] px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition"
+                  >
+                    Apply to Fence Mesh
+                  </button>
+                </>
+              )}
               <button
-                key={t}
                 type="button"
-                onClick={() => setMapType(t)}
-                className={`px-2.5 py-1.5 rounded-lg font-semibold capitalize transition ${
-                  mapType === t
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                onClick={() => setMeasurePoints([])}
+                className="min-h-[36px] px-3 py-1.5 bg-white hover:bg-purple-100 text-purple-900 border border-purple-200 font-semibold rounded-lg transition"
               >
-                {t}
+                Reset Points
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMeasuring(false);
+                  setMeasurePoints([]);
+                }}
+                className="min-h-[36px] px-2.5 py-1.5 text-purple-700 hover:text-purple-900 font-semibold"
+              >
+                Close Tool
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Map Type (Satellite vs Roadmap), GPS Accuracy Circle Toggle & Polyline Layer Toggles */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Satellite vs Roadmap Toggle */}
+            <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              {(['satellite', 'roadmap', 'hybrid'] as ReportMapType[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setMapType(t)}
+                  className={`px-3 py-1.5 rounded-lg font-semibold capitalize transition ${
+                    mapType === t
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            {/* GPS Accuracy Circle Overlay Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowAccuracyCircle(!showAccuracyCircle)}
+              className={`px-3 py-2 rounded-xl font-semibold inline-flex items-center gap-1.5 border transition ${
+                showAccuracyCircle
+                  ? 'bg-sky-50 text-sky-700 border-sky-300'
+                  : 'bg-slate-100 text-slate-500 border-slate-200'
+              }`}
+              title="Toggle GPS Accuracy Circle Overlay on Map"
+            >
+              <Target className="w-3.5 h-3.5 text-sky-600" />
+              <span>Accuracy Ring: {showAccuracyCircle ? 'On' : 'Off'}</span>
+            </button>
+
+            {/* Polyline Path Layer Toggles */}
+            <div className="inline-flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setShowRoadPolyline(!showRoadPolyline)}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold inline-flex items-center gap-1 transition ${
+                  showRoadPolyline ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Toggle Road Route Polyline Overlay"
+              >
+                {showRoadPolyline ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                <span>Road Path</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowFencePolyline(!showFencePolyline)}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold inline-flex items-center gap-1 transition ${
+                  showFencePolyline ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Toggle Fencing Posts Sequence Polyline Overlay"
+              >
+                {showFencePolyline ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                <span>Fence Path</span>
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3 text-slate-500">
-            {pinMode !== 'browse' ? (
+          <div className="text-slate-500">
+            {isMeasuring ? (
+              <span className="font-semibold text-purple-700">
+                Distance Tool: Click 2 points on map to measure.
+              </span>
+            ) : pinMode !== 'browse' ? (
               <span className="font-semibold text-amber-700">
-                Click or tap anywhere on the map to place{' '}
+                Click or tap map for{' '}
                 {pinMode === 'site'
                   ? 'Site Reference Pin'
                   : pinMode === 'road_start'
@@ -588,14 +904,14 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
             ) : (
               <span className="inline-flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-slate-400" />
-                <span>Drag Site Pin to fine-tune accuracy for PDF reports.</span>
+                <span>Polylines connect road route &amp; logged post sequence.</span>
               </span>
             )}
           </div>
         </div>
 
-        {/* Interactive Map Container (explicit height required per CF2) */}
-        <div className="w-full h-[340px] sm:h-[420px] rounded-xl overflow-hidden border border-slate-200 bg-slate-100 relative">
+        {/* Interactive Map Container */}
+        <div className="w-full h-[360px] sm:h-[440px] rounded-xl overflow-hidden border border-slate-200 bg-slate-100 relative">
           <GoogleMap
             mapId="DEMO_MAP_ID"
             defaultCenter={initialCamera.center}
@@ -615,7 +931,28 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
               gpsPosts={mapData.gpsPosts}
               allPoints={mapData.allPoints}
               fitTrigger={fitTrigger}
+              showRoadPolyline={showRoadPolyline}
+              showFencePolyline={showFencePolyline}
+              measurePoints={measurePoints}
+              currentGps={currentGps}
+              showAccuracyCircle={showAccuracyCircle}
             />
+
+            {/* Distance Measurement Points */}
+            {measurePoints.map((pt, idx) => (
+              <InteractivePinMarker
+                key={`measure-${idx}`}
+                id={`measure-${idx}`}
+                position={pt}
+                title={`Measure Point ${idx + 1}`}
+                subtitle="Distance Measurement Marker"
+                pinBg="#7c3aed"
+                pinBorder="#5b21b6"
+                pinGlyphColor="#ffffff"
+                glyphText={String(idx + 1)}
+                onOpenInfo={setActiveInfo}
+              />
+            ))}
 
             {/* Site Reference Pin */}
             {mapData.sitePin && (
@@ -748,18 +1085,18 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
           </div>
 
           <div className="min-w-0">
-            <div className="text-slate-500 font-medium">Road Alignment (A &rarr; B)</div>
+            <div className="text-slate-500 font-medium">Road Route Polyline (A &rarr; B)</div>
             <div className="font-mono font-semibold text-slate-900 tabular-nums truncate mt-0.5">
-              {mapData.roadStart || mapData.roadEnd
-                ? `${mapData.roadStart ? `${mapData.roadStart.lat.toFixed(4)},${mapData.roadStart.lng.toFixed(4)}` : '—'} → ${mapData.roadEnd ? `${mapData.roadEnd.lat.toFixed(4)},${mapData.roadEnd.lng.toFixed(4)}` : '—'}`
-                : 'No road GPS pinned'}
+              {mapData.roadStart && mapData.roadEnd
+                ? `Active (${roadSection?.lengthMeters ?? 0}m)`
+                : 'Road GPS A/B needed'}
             </div>
           </div>
 
           <div className="min-w-0">
-            <div className="text-slate-500 font-medium">GPS-Tagged Fence Posts</div>
+            <div className="text-slate-500 font-medium">Fence Posts Polyline Sequence</div>
             <div className="font-semibold text-slate-900 tabular-nums mt-0.5">
-              {mapData.gpsPosts.length} of {project.fencePosts.length} posts mapped
+              {mapData.gpsPosts.length} posts connected in sequence
             </div>
           </div>
         </div>

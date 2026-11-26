@@ -61,16 +61,24 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
   const totalMeshLength = project.fenceMeshSegments.reduce((acc, curr) => acc + curr.lengthMeters, 0);
   const totalRrmVolume = project.rrmWalls.reduce((acc, curr) => {
-    const avgWidth = (curr.topWidthMeters + curr.bottomWidthMeters) / 2;
-    return acc + (curr.lengthMeters * curr.heightMeters * avgWidth);
+    const topW = (curr.topWidthEntries && curr.topWidthEntries.length > 0) ? curr.topWidthEntries.reduce((a, b) => a + b, 0) / curr.topWidthEntries.length : curr.topWidthMeters;
+    const botW = (curr.bottomWidthEntries && curr.bottomWidthEntries.length > 0) ? curr.bottomWidthEntries.reduce((a, b) => a + b, 0) / curr.bottomWidthEntries.length : curr.bottomWidthMeters;
+    const h = (curr.heightEntries && curr.heightEntries.length > 0) ? curr.heightEntries.reduce((a, b) => a + b, 0) / curr.heightEntries.length : curr.heightMeters;
+    const avgWidth = (topW + botW) / 2;
+    return acc + (curr.lengthMeters * h * avgWidth);
   }, 0);
 
   // Road Totals
   const totalRoadLength = project.roadSections.reduce((acc, curr) => acc + curr.lengthMeters, 0);
   const roadChainageStart = project.roadSections[0]?.chainageStart || '0+000';
   const roadChainageEnd = project.roadSections[0]?.chainageEnd || formatChainage(totalRoadLength);
-  const totalRoadArea = project.roadSections.reduce((acc, curr) => acc + (curr.lengthMeters * curr.widthMeters), 0);
-  const roadWidth = project.roadSections[0]?.widthMeters ?? settings.defaultRoadWidth;
+  const roadSec0 = project.roadSections[0];
+  const roadWidthEntries = roadSec0?.widthEntries ?? [roadSec0?.widthMeters ?? settings.defaultRoadWidth];
+  const roadWidth = roadWidthEntries.length > 0 ? roadWidthEntries.reduce((a, b) => a + b, 0) / roadWidthEntries.length : (roadSec0?.widthMeters ?? settings.defaultRoadWidth);
+  const totalRoadArea = project.roadSections.reduce((acc, curr) => {
+    const w = (curr.widthEntries && curr.widthEntries.length > 0) ? curr.widthEntries.reduce((a, b) => a + b, 0) / curr.widthEntries.length : curr.widthMeters;
+    return acc + (curr.lengthMeters * w);
+  }, 0);
   const totalSideDrain = project.roadSections.reduce((acc, curr) => acc + (curr.sideDrainLengthMeters || 0), 0);
 
   const auditStatus = project.auditInfo?.auditStatus || 'pending';

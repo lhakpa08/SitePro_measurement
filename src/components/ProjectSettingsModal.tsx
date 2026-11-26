@@ -625,6 +625,22 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {/* Compact Mode Toggle */}
+                <div className="border-t border-slate-200 pt-4">
+                  <label className="flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200 cursor-pointer transition">
+                    <div>
+                      <div className="text-xs font-bold text-slate-800">Compact Mode (Power Users)</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">Reduces padding and margin sizes across dashboard to view more entries.</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(settings.compactMode)}
+                      onChange={(e) => setSettings(prev => ({ ...prev, compactMode: e.target.checked }))}
+                      className="w-4 h-4 text-amber-600 focus:ring-amber-500 rounded border-slate-300"
+                    />
+                  </label>
+                </div>
               </div>
             )}
 
