@@ -1,8 +1,23 @@
-import { ConstructionProject } from '../types';
+import { ConstructionProject, GpsCoordinate, InputLocationPoint } from '../types';
 import { getProjectSettings, formatChainage } from './geo';
-import { buildSiteStaticMapUrl, getProjectMapData, StaticMapScope } from './staticMap';
+import {
+  buildSiteStaticMapUrl,
+  getGoogleMapsApiKey,
+  getProjectMapData,
+  StaticMapScope,
+} from './staticMap';
+import {
+  cleanVariance,
+  computeMeasurements,
+  formatVariance,
+  ReportMeasurements,
+  roundTo,
+} from './calculations';
 
-function escapeHtml(value: string | number | undefined | null): string {
+export { computeMeasurements };
+export type { ReportMeasurements };
+
+export function escapeHtml(value: string | number | undefined | null): string {
   const str = String(value ?? '');
   return str
     .replace(/&/g, '&amp;')
@@ -20,149 +35,410 @@ function csvCell(value: string | number | undefined | null): string {
   return str;
 }
 
-function formatAuditStatus(status?: string): string {
+export function formatAuditStatus(status?: string): string {
   if (status === 'fully_compliant') return 'Fully Compliant';
   if (status === 'verified_with_variance') return 'Verified with Variance';
   return 'Pending Audit';
 }
 
-interface ReportMeasurements {
-  lengthUnit: string;
-  areaUnit: string;
-  volumeUnit: string;
-  totalAngle: number;
-  totalIntermed: number;
-  totalStrut: number;
-  totalGate: number;
-  totalPosts: number;
-  postUnit: string;
-  meshLen: number;
-  meshWidth: number;
-  meshArea: number;
-  rrmLen: number;
-  rrmWidth: number;
-  rrmHeight: number;
-  rrmVol: number;
-  roadLen: number;
-  chainageStart: string;
-  chainageEnd: string;
-  roadWidth: number;
-  roadDepth: number;
-  roadArea: number;
-  roadVol: number;
-  sideDrainLen: number;
+export interface RecordedInputItem {
+  category: string;
+  fieldLabel: string;
+  rawInput: string;
+  computedTotal: string;
+  capturedGps?: string;
 }
 
-function getAverageOf(entries?: number[], fallback = 0): number {
-  if (!entries || entries.length === 0) return fallback;
-  const valid = entries.filter(n => !isNaN(n) && n >= 0);
-  if (valid.length === 0) return fallback;
-  return valid.reduce((a, b) => a + b, 0) / valid.length;
+function formatGpsShort(gps?: GpsCoordinate): string {
+  if (!gps) return 'Not captured';
+  return `${gps.lat.toFixed(6)}, ${gps.lng.toFixed(6)}`;
 }
 
-function computeMeasurements(project: ConstructionProject): ReportMeasurements {
+
+function getLatestFieldGps(project: ConstructionProject, fieldKey: string): GpsCoordinate | undefined {
+  const matches = (project.inputLocations ?? []).filter((l) => l.fieldKey === fieldKey);
+  if (matches.length > 0) {
+    return matches[matches.length - 1].gps;
+  }
+  return undefined;
+}
+
+export function buildAllRecordedInputs(
+  project: ConstructionProject,
+  scope: StaticMapScope = 'all'
+): RecordedInputItem[] {
   const settings = getProjectSettings(project);
-  const { items } = settings;
-  const lengthUnit = settings.unitSystem === 'imperial' ? 'ft' : 'm';
-  const areaUnit = settings.unitSystem === 'imperial' ? 'ft²' : 'm²';
-  const volumeUnit = settings.unitSystem === 'imperial' ? 'ft³' : 'm³';
+  const { items, customItems } = settings;
+  const m = computeMeasurements(project);
+  const rows: RecordedInputItem[] = [];
 
-  const totalAngle = project.fencePosts.filter(p => p.postType === 'angle_post').length;
-  const totalIntermed = project.fencePosts.filter(p => p.postType === 'intermediate_post').length;
-  const totalStrut = project.fencePosts.filter(p => p.postType === 'strut_post').length;
-  const totalGate = project.fencePosts.filter(p => p.postType === 'gate_post').length;
-  const totalPosts =
-    (items.anglePosts.enabled ? totalAngle : 0) +
-    (items.intermediatePosts.enabled ? totalIntermed : 0) +
-    (items.strutPosts.enabled ? totalStrut : 0) +
-    (items.gatePosts.enabled ? totalGate : 0);
+  if (scope !== 'road') {
+    if (items.anglePosts.enabled) {
+      const postGps =
+        project.fencePosts.filter((p) => p.postType === 'angle_post' && p.gps).slice(-1)[0]?.gps ||
+        getLatestFieldGps(project, 'angle_post');
+      rows.push({
+        category: 'Fencing',
+        fieldLabel: 'Angle Posts (Corner / End)',
+        rawInput: `${m.totalAngle} ${items.anglePosts.unit}`,
+        computedTotal: `${m.totalAngle} ${items.anglePosts.unit}`,
+        capturedGps: formatGpsShort(postGps),
+      });
+    }
+    if (items.intermediatePosts.enabled) {
+      const postGps =
+        project.fencePosts.filter((p) => p.postType === 'intermediate_post' && p.gps).slice(-1)[0]?.gps ||
+        getLatestFieldGps(project, 'intermediate_post');
+      rows.push({
+        category: 'Fencing',
+        fieldLabel: 'Intermediate Posts',
+        rawInput: `${m.totalIntermed} ${items.intermediatePosts.unit}`,
+        computedTotal: `${m.totalIntermed} ${items.intermediatePosts.unit}`,
+        capturedGps: formatGpsShort(postGps),
+      });
+    }
+    if (items.strutPosts.enabled) {
+      const postGps =
+        project.fencePosts.filter((p) => p.postType === 'strut_post' && p.gps).slice(-1)[0]?.gps ||
+        getLatestFieldGps(project, 'strut_post');
+      rows.push({
+        category: 'Fencing',
+        fieldLabel: 'Strut Posts',
+        rawInput: `${m.totalStrut} ${items.strutPosts.unit}`,
+        computedTotal: `${m.totalStrut} ${items.strutPosts.unit}`,
+        capturedGps: formatGpsShort(postGps),
+      });
+    }
+    if (items.gatePosts.enabled) {
+      const postGps =
+        project.fencePosts.filter((p) => p.postType === 'gate_post' && p.gps).slice(-1)[0]?.gps ||
+        getLatestFieldGps(project, 'gate_post');
+      rows.push({
+        category: 'Fencing',
+        fieldLabel: 'Gate Posts',
+        rawInput: `${m.totalGate} ${items.gatePosts.unit}`,
+        computedTotal: `${m.totalGate} ${items.gatePosts.unit}`,
+        capturedGps: formatGpsShort(postGps),
+      });
+    }
+    if (items.chainLinkMesh.enabled) {
+      const meshGps = project.fenceMeshSegments[0]?.gps || getLatestFieldGps(project, 'chainLinkMesh');
+      rows.push({
+        category: 'Fencing',
+        fieldLabel: 'Chain-Link Mesh Length',
+        rawInput: `${m.meshLen} ${items.chainLinkMesh.unit}`,
+        computedTotal: `${m.meshLen.toLocaleString()} ${items.chainLinkMesh.unit}`,
+        capturedGps: formatGpsShort(meshGps),
+      });
+      rows.push({
+        category: 'Fencing',
+        fieldLabel: 'Chain-Link Mesh Width / Height',
+        rawInput: `${m.meshWidth} ${m.lengthUnit}`,
+        computedTotal: `Area: ${m.meshArea.toFixed(2)} ${m.areaUnit}`,
+        capturedGps: formatGpsShort(meshGps),
+      });
+    }
+    if (items.rrmWall.enabled) {
+      const rrmGps = project.rrmWalls[0]?.gps || getLatestFieldGps(project, 'rrmWall');
+      rows.push({
+        category: 'Masonry (RMM Wall)',
+        fieldLabel: 'RMM Wall Length',
+        rawInput: `${m.rrmLen} ${m.lengthUnit}`,
+        computedTotal: `${m.rrmLen.toFixed(2)} ${m.lengthUnit}`,
+        capturedGps: formatGpsShort(rrmGps),
+      });
+      rows.push({
+        category: 'Masonry (RMM Wall)',
+        fieldLabel: 'RMM Wall Width & Multi-Samples',
+        rawInput:
+          m.rrmWidthEntries.length > 0
+            ? `Samples (${m.rrmWidthEntries.length}): ${m.rrmWidthEntries.join(', ')} ${m.lengthUnit}`
+            : `Single entry: ${m.rrmWidth} ${m.lengthUnit}`,
+        computedTotal: `Avg: ${m.rrmWidth.toFixed(2)} ${m.lengthUnit}`,
+        capturedGps: formatGpsShort(rrmGps),
+      });
+      rows.push({
+        category: 'Masonry (RMM Wall)',
+        fieldLabel: 'RMM Wall Height & Multi-Samples',
+        rawInput:
+          m.rrmHeightEntries.length > 0
+            ? `Samples (${m.rrmHeightEntries.length}): ${m.rrmHeightEntries.join(', ')} ${m.lengthUnit}`
+            : `Single entry: ${m.rrmHeight} ${m.lengthUnit}`,
+        computedTotal: `Avg: ${m.rrmHeight.toFixed(2)} ${m.lengthUnit} | Vol: ${m.rrmVol.toFixed(2)} ${items.rrmWall.unit}`,
+        capturedGps: formatGpsShort(rrmGps),
+      });
+    }
+  }
 
-  const postUnit = items.anglePosts.unit || items.intermediatePosts.unit || 'pcs';
+  if (scope !== 'fencing') {
+    if (items.roadMeasurement.enabled) {
+      const roadSec = project.roadSections[0];
+      const roadGps = roadSec?.gps || roadSec?.startGps || getLatestFieldGps(project, 'roadMeasurement');
+      rows.push({
+        category: 'Road',
+        fieldLabel: 'Road Chainage Range',
+        rawInput: `${m.chainageStart} to ${m.chainageEnd}`,
+        computedTotal: `${m.roadLen.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${items.roadMeasurement.unit}`,
+        capturedGps: formatGpsShort(roadSec?.startGps || roadGps),
+      });
+      rows.push({
+        category: 'Road',
+        fieldLabel: 'Road Length',
+        rawInput: `${m.roadLen} ${items.roadMeasurement.unit}`,
+        computedTotal: `${m.roadLen.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${items.roadMeasurement.unit}`,
+        capturedGps: formatGpsShort(roadGps),
+      });
+      rows.push({
+        category: 'Road',
+        fieldLabel: 'Road Breadth / Width & Multi-Samples',
+        rawInput:
+          m.roadWidthEntries.length > 0
+            ? `Samples (${m.roadWidthEntries.length}): ${m.roadWidthEntries.join(', ')} ${m.lengthUnit}`
+            : `Single entry: ${m.roadWidth} ${m.lengthUnit}`,
+        computedTotal: `Avg: ${m.roadWidth} ${m.lengthUnit} | Area: ${m.roadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${m.areaUnit}`,
+        capturedGps: formatGpsShort(roadGps),
+      });
+      rows.push({
+        category: 'Road',
+        fieldLabel: 'Road Depth / Thickness & Multi-Samples',
+        rawInput:
+          m.roadDepthEntries.length > 0
+            ? `Samples (${m.roadDepthEntries.length}): ${m.roadDepthEntries.join(', ')} ${m.lengthUnit}`
+            : `Single entry: ${m.roadDepth} ${m.lengthUnit}`,
+        computedTotal: `Avg: ${m.roadDepth} ${m.lengthUnit} | Vol: ${m.roadVol.toFixed(2)} ${m.volumeUnit}`,
+        capturedGps: formatGpsShort(roadSec?.endGps || roadGps),
+      });
+    }
+    if (items.sideDrain.enabled) {
+      const drainGps = getLatestFieldGps(project, 'sideDrain') || project.roadSections[0]?.gps;
+      rows.push({
+        category: 'Road',
+        fieldLabel: 'Road Side Drain Length',
+        rawInput: `${m.sideDrainLen} ${items.sideDrain.unit}`,
+        computedTotal: `${m.sideDrainLen.toLocaleString()} ${items.sideDrain.unit}`,
+        capturedGps: formatGpsShort(drainGps),
+      });
+    }
+  }
 
-  const meshLen = project.fenceMeshSegments.reduce((a, c) => a + c.lengthMeters, 0);
-  const meshWidth = project.fenceMeshSegments[0]?.meshHeightMeters ?? settings.defaultMeshHeight;
-  const meshArea = meshLen * meshWidth;
+  const enabledCustom = customItems.filter((c) => {
+    if (!c.enabled) return false;
+    if (scope === 'fencing') return c.category === 'fencing';
+    if (scope === 'road') return c.category === 'road';
+    return true;
+  });
 
-  const rrmLen = project.rrmWalls.reduce((a, c) => a + c.lengthMeters, 0);
-  const rrmWall0 = project.rrmWalls[0];
-  const rrmTopW = rrmWall0 ? getAverageOf(rrmWall0.topWidthEntries, rrmWall0.topWidthMeters) : 0.38;
-  const rrmBotW = rrmWall0 ? getAverageOf(rrmWall0.bottomWidthEntries, rrmWall0.bottomWidthMeters) : 0.38;
-  const rrmWidth = Number(((rrmTopW + rrmBotW) / 2).toFixed(2));
-  const rrmHeight = rrmWall0 ? getAverageOf(rrmWall0.heightEntries, rrmWall0.heightMeters) : settings.defaultRrmHeight;
-  const rrmVol = project.rrmWalls.reduce(
-    (acc, c) => {
-      const topW = getAverageOf(c.topWidthEntries, c.topWidthMeters);
-      const botW = getAverageOf(c.bottomWidthEntries, c.bottomWidthMeters);
-      const h = getAverageOf(c.heightEntries, c.heightMeters);
-      return acc + c.lengthMeters * h * ((topW + botW) / 2);
-    },
-    0
-  );
+  enabledCustom.forEach((c) => {
+    const customGps =
+      c.gps ||
+      getLatestFieldGps(project, `custom:${c.id}`) ||
+      getLatestFieldGps(project, c.id);
+    rows.push({
+      category: `Custom (${c.category})`,
+      fieldLabel: c.name,
+      rawInput: `${c.quantity} ${c.unit}`,
+      computedTotal: `${c.quantity} ${c.unit}`,
+      capturedGps: formatGpsShort(customGps),
+    });
+  });
 
-  const roadLen = project.roadSections.reduce((a, c) => a + c.lengthMeters, 0);
-  const chainageStart = project.roadSections[0]?.chainageStart || '0+000';
-  const chainageEnd = project.roadSections[0]?.chainageEnd || formatChainage(roadLen);
-  const roadSec0 = project.roadSections[0];
-  const roadWidth = roadSec0 ? getAverageOf(roadSec0.widthEntries, roadSec0.widthMeters ?? settings.defaultRoadWidth) : settings.defaultRoadWidth;
-  const roadDepth = roadSec0 ? getAverageOf(roadSec0.depthEntries, roadSec0.earthworkCutDepthMeters) : 0;
-  const roadArea = project.roadSections.reduce((acc, curr) => {
-    const w = getAverageOf(curr.widthEntries, curr.widthMeters);
-    return acc + curr.lengthMeters * w;
-  }, 0);
-  const roadVol = project.roadSections.reduce((acc, curr) => {
-    const w = getAverageOf(curr.widthEntries, curr.widthMeters);
-    const d = getAverageOf(curr.depthEntries, curr.earthworkCutDepthMeters);
-    return acc + curr.lengthMeters * w * d;
-  }, 0);
-  const sideDrainLen = project.roadSections.reduce((acc, curr) => acc + (curr.sideDrainLengthMeters || 0), 0);
+  if (scope === 'all' && project.auditNotes?.trim()) {
+    const notesGps = getLatestFieldGps(project, 'auditNotes');
+    rows.push({
+      category: 'Field Notes',
+      fieldLabel: 'Audit Notes',
+      rawInput: project.auditNotes.trim(),
+      computedTotal: `${project.auditNotes.trim().length} chars`,
+      capturedGps: formatGpsShort(notesGps),
+    });
+  }
 
-  return {
-    lengthUnit,
-    areaUnit,
-    volumeUnit,
-    totalAngle,
-    totalIntermed,
-    totalStrut,
-    totalGate,
-    totalPosts,
-    postUnit,
-    meshLen,
-    meshWidth,
-    meshArea,
-    rrmLen,
-    rrmWidth,
-    rrmHeight,
-    rrmVol,
-    roadLen,
-    chainageStart,
-    chainageEnd,
-    roadWidth,
-    roadDepth,
-    roadArea,
-    roadVol,
-    sideDrainLen,
-  };
+  return rows;
+}
+
+export function buildVectorGeospatialSvg(
+  project: ConstructionProject,
+  scope: StaticMapScope = 'all',
+  liveGps?: GpsCoordinate
+): string {
+  const data = getProjectMapData(project, scope);
+  const pts: Array<{ lat: number; lng: number; color: string; label: string; kind: string }> = [];
+
+  if (data.sitePin) {
+    pts.push({ lat: data.sitePin.lat, lng: data.sitePin.lng, color: '#e11d48', label: 'S', kind: 'site' });
+  }
+  if (data.roadStart) {
+    pts.push({ lat: data.roadStart.lat, lng: data.roadStart.lng, color: '#059669', label: 'A', kind: 'roadStart' });
+  }
+  if (data.roadEnd) {
+    pts.push({ lat: data.roadEnd.lat, lng: data.roadEnd.lng, color: '#059669', label: 'B', kind: 'roadEnd' });
+  }
+  data.gpsPosts.forEach((p, idx) => {
+    pts.push({ lat: p.gps.lat, lng: p.gps.lng, color: '#d97706', label: `P${idx + 1}`, kind: 'post' });
+  });
+  data.inputLocations.forEach((l, idx) => {
+    pts.push({ lat: l.gps.lat, lng: l.gps.lng, color: '#7c3aed', label: `I${idx + 1}`, kind: 'input' });
+  });
+  if (liveGps) {
+    pts.push({ lat: liveGps.lat, lng: liveGps.lng, color: '#0284c7', label: 'GPS', kind: 'live' });
+  }
+
+  if (pts.length === 0) return '';
+
+  const width = 640;
+  const height = 280;
+  const pad = 44;
+
+  const lats = pts.map((p) => p.lat);
+  const lngs = pts.map((p) => p.lng);
+  let minLat = Math.min(...lats);
+  let maxLat = Math.max(...lats);
+  let minLng = Math.min(...lngs);
+  let maxLng = Math.max(...lngs);
+
+  const minSpan = 0.0008;
+  if (maxLat - minLat < minSpan) {
+    const mid = (minLat + maxLat) / 2;
+    minLat = mid - minSpan / 2;
+    maxLat = mid + minSpan / 2;
+  }
+  if (maxLng - minLng < minSpan) {
+    const mid = (minLng + maxLng) / 2;
+    minLng = mid - minSpan / 2;
+    maxLng = mid + minSpan / 2;
+  }
+
+  const projectX = (lng: number) =>
+    pad + ((lng - minLng) / (maxLng - minLng)) * (width - pad * 2);
+  const projectY = (lat: number) =>
+    height - pad - ((lat - minLat) / (maxLat - minLat)) * (height - pad * 2);
+
+  const gridLines: string[] = [];
+  for (let i = 0; i <= 4; i++) {
+    const gx = pad + ((width - pad * 2) * i) / 4;
+    const gy = pad + ((height - pad * 2) * i) / 4;
+    gridLines.push(
+      `<line x1="${gx.toFixed(1)}" y1="${pad}" x2="${gx.toFixed(1)}" y2="${height - pad}" stroke="#e2e8f0" stroke-dasharray="3 3" />`,
+      `<line x1="${pad}" y1="${gy.toFixed(1)}" x2="${width - pad}" y2="${gy.toFixed(1)}" stroke="#e2e8f0" stroke-dasharray="3 3" />`
+    );
+  }
+
+  const roadLine =
+    data.roadStart && data.roadEnd
+      ? `<line x1="${projectX(data.roadStart.lng).toFixed(1)}" y1="${projectY(data.roadStart.lat).toFixed(1)}" x2="${projectX(data.roadEnd.lng).toFixed(1)}" y2="${projectY(data.roadEnd.lat).toFixed(1)}" stroke="#059669" stroke-width="3.5" stroke-linecap="round" />`
+      : '';
+
+  const fenceLine =
+    data.gpsPosts.length >= 2
+      ? `<polyline fill="none" stroke="#d97706" stroke-width="2.5" stroke-linejoin="round" points="${data.gpsPosts
+          .map((p) => `${projectX(p.gps.lng).toFixed(1)},${projectY(p.gps.lat).toFixed(1)}`)
+          .join(' ')}" />`
+      : '';
+
+  const markersSvg = pts
+    .map((pt) => {
+      const x = projectX(pt.lng);
+      const y = projectY(pt.lat);
+      const r = pt.kind === 'post' ? 6 : 9;
+      return `
+        <g>
+          <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${pt.color}" stroke="#ffffff" stroke-width="2" />
+          <text x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="middle" font-size="${pt.kind === 'post' ? 7 : 8.5}" font-weight="700" fill="#ffffff" font-family="ui-monospace, monospace">${escapeHtml(pt.label)}</text>
+        </g>
+      `;
+    })
+    .join('');
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="display:block;background:#f8fafc;border-radius:6px;">
+      ${gridLines.join('')}
+      <rect x="${pad}" y="${pad}" width="${width - pad * 2}" height="${height - pad * 2}" fill="none" stroke="#cbd5e1" stroke-width="1" />
+      ${roadLine}
+      ${fenceLine}
+      ${markersSvg}
+      <text x="${pad}" y="22" font-size="10" font-weight="700" fill="#334155" font-family="sans-serif">Geospatial Coordinate Plot (${pts.length} plotted points)</text>
+      <text x="${width - pad}" y="22" text-anchor="end" font-size="9.5" fill="#64748b" font-family="ui-monospace, monospace">Lat ${minLat.toFixed(5)}..${maxLat.toFixed(5)} | Lng ${minLng.toFixed(5)}..${maxLng.toFixed(5)}</text>
+      <text x="${pad}" y="${height - 14}" font-size="9" fill="#475569" font-family="sans-serif">S = Site Pin | A/B = Road Alignment | P# = Fence Posts | I# = Input Location Pins | GPS = Live Device</text>
+    </svg>
+  `;
 }
 
 const SHARED_PRINT_CSS = `
-  @page { size: A4; margin: 16mm; }
-  * { box-sizing: border-box; }
+  @page { size: A4 portrait; margin: 12mm 14mm; }
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: #0f172a;
-    background: #ffffff;
+    background: #f1f5f9;
     margin: 0;
-    padding: 24px;
-    font-size: 12px;
+    padding: 24px 16px;
+    font-size: 11.5px;
     line-height: 1.45;
+  }
+  .report-shell {
+    max-width: 960px;
+    margin: 0 auto;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 28px 32px;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
+  }
+  .toolbar-actions {
+    max-width: 960px;
+    margin: 0 auto 14px auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: #0f172a;
+    color: #ffffff;
+    padding: 12px 18px;
+    border-radius: 10px;
+  }
+  .toolbar-actions button {
+    background: #f59e0b;
+    color: #0f172a;
+    border: none;
+    border-radius: 7px;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .toolbar-actions button.secondary {
+    background: #334155;
+    color: #ffffff;
+  }
+  .print-only { display: none; }
+  @media print {
+    .no-print { display: none !important; }
+    .print-only { display: block !important; }
+    body {
+      background: #ffffff;
+      padding: 0;
+    }
+    .report-shell {
+      max-width: none;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      box-shadow: none;
+    }
   }
   .doc-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    border-bottom: 2px solid #0f172a;
+    gap: 16px;
+    border-bottom: 2.5px solid #0f172a;
     padding-bottom: 12px;
-    margin-bottom: 18px;
+    margin-bottom: 16px;
   }
   .doc-kicker {
     font-size: 10px;
@@ -170,112 +446,188 @@ const SHARED_PRINT_CSS = `
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: #64748b;
-    margin-bottom: 3px;
+    margin-bottom: 4px;
   }
   .doc-title {
-    font-size: 20px;
+    font-size: 21px;
     font-weight: 800;
     color: #0f172a;
     margin: 0;
+    letter-spacing: -0.01em;
   }
   .doc-meta-right {
     text-align: right;
     font-size: 11px;
     color: #475569;
+    white-space: nowrap;
   }
   .info-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 8px 24px;
+    gap: 6px 24px;
     background: #f8fafc;
     border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    padding: 12px 14px;
-    margin-bottom: 20px;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    break-inside: avoid;
   }
   .info-row {
     display: flex;
     justify-content: space-between;
-    font-size: 11.5px;
-    border-bottom: 1px solid #eef2f7;
-    padding: 3px 0;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 4px 0;
+  }
+  .info-row:nth-last-child(-n+2) {
+    border-bottom: none;
   }
   .info-label { color: #64748b; font-weight: 600; }
-  .info-val { color: #0f172a; font-weight: 700; text-align: right; }
+  .info-val { color: #0f172a; font-weight: 700; text-align: right; word-break: break-word; }
   h2 {
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 11.5px;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #334155;
+    letter-spacing: 0.06em;
+    color: #1e293b;
     margin: 20px 0 8px 0;
-    padding-bottom: 4px;
-    border-bottom: 1px solid #cbd5e1;
+    padding: 5px 10px;
+    background: #f1f5f9;
+    border-left: 3.5px solid #0f172a;
+    border-radius: 0 4px 4px 0;
+    break-after: avoid;
+    page-break-after: avoid;
   }
   table {
     width: 100%;
     border-collapse: collapse;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
+    table-layout: auto;
+  }
+  thead { display: table-header-group; }
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   th, td {
     border: 1px solid #cbd5e1;
-    padding: 8px 10px;
+    padding: 6.5px 8px;
     text-align: left;
+    vertical-align: top;
+    word-break: break-word;
   }
   th {
     background: #f1f5f9;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     color: #334155;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
   }
-  td { font-size: 12px; color: #1e293b; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+  td { font-size: 11px; color: #1e293b; }
+  tbody tr:nth-child(even):not(.totals-row) {
+    background: #f8fafc;
+  }
+  tr.totals-row td {
+    background: #eef2ff;
+    font-weight: 800;
+    color: #0f172a;
+    border-top: 2px solid #1e293b;
+    padding: 8px 9px;
+  }
+  .totals-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .total-pill {
+    display: inline-block;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+  }
+  .cat-tag {
+    display: inline-block;
+    padding: 1.5px 6px;
+    border-radius: 4px;
+    font-size: 9.5px;
+    font-weight: 700;
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #e2e8f0;
+    white-space: nowrap;
+  }
+  .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
   .center { text-align: center; }
-  .muted { color: #64748b; font-size: 11px; }
+  .muted { color: #64748b; font-size: 10.5px; }
   .badge {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 4px;
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 700;
     background: #e2e8f0;
     color: #0f172a;
   }
   .remarks-box {
     background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #cbd5e1;
+    border-left: 3px solid #64748b;
     border-radius: 6px;
-    padding: 10px 12px;
-    margin-bottom: 24px;
-    font-size: 11.5px;
+    padding: 9px 12px;
+    margin-bottom: 14px;
+    font-size: 11px;
+    break-inside: avoid;
   }
+  .totals-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+    break-inside: avoid;
+  }
+  .total-card {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-top: 3px solid #0f172a;
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .total-card-label { font-size: 9.5px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+  .total-card-val { font-size: 14px; font-weight: 800; color: #0f172a; margin-top: 3px; font-variant-numeric: tabular-nums; }
   .sig-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 40px;
-    margin-top: 36px;
+    margin-top: 28px;
+    break-inside: avoid;
     page-break-inside: avoid;
   }
   .sig-box {
-    border-top: 1px solid #64748b;
+    border-top: 1px solid #475569;
     padding-top: 6px;
-    font-size: 11px;
-    color: #475569;
+    font-size: 10.5px;
+    color: #334155;
+    font-weight: 600;
   }
   .footer {
-    margin-top: 28px;
+    margin-top: 20px;
     padding-top: 8px;
-    border-top: 1px solid #e2e8f0;
-    font-size: 10px;
-    color: #94a3b8;
+    border-top: 1px solid #cbd5e1;
+    font-size: 9.5px;
+    color: #64748b;
     display: flex;
     justify-content: space-between;
   }
   .map-section {
-    margin: 18px 0 20px 0;
-    page-break-inside: avoid;
+    margin: 14px 0 18px 0;
   }
   .map-frame {
     border: 1px solid #cbd5e1;
@@ -283,58 +635,158 @@ const SHARED_PRINT_CSS = `
     overflow: hidden;
     background: #f8fafc;
     margin-bottom: 10px;
+    break-inside: avoid;
+  }
+  .print-map-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .print-map-grid.two-col {
+    grid-template-columns: 1fr 1fr;
+  }
+  .realtime-map-box {
+    width: 100%;
+    height: 340px;
+    background: #e2e8f0;
   }
   .report-map-img {
     width: 100%;
-    max-height: 300px;
+    height: 230px;
     object-fit: cover;
     display: block;
   }
   .map-caption {
-    padding: 7px 10px;
-    font-size: 10.5px;
+    padding: 6px 10px;
+    font-size: 10px;
     color: #475569;
     background: #f8fafc;
     border-top: 1px solid #e2e8f0;
     display: flex;
     justify-content: space-between;
-    gap: 12px;
+    gap: 10px;
   }
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-variant-numeric: tabular-nums;
   }
+  @media (max-width: 720px) {
+    .report-shell { padding: 16px; }
+    .totals-cards { grid-template-columns: repeat(2, 1fr); }
+    .info-grid { grid-template-columns: 1fr; }
+    .print-map-grid.two-col { grid-template-columns: 1fr; }
+  }
 `;
+
+function buildTotalsCardsHtml(project: ConstructionProject, scope: StaticMapScope): string {
+  const m = computeMeasurements(project, scope);
+  const mapData = getProjectMapData(project, scope);
+
+  return `
+    <div class="totals-cards">
+      <div class="total-card">
+        <div class="total-card-label">Total Posts</div>
+        <div class="total-card-val">${m.totalPosts} ${escapeHtml(m.postUnit)}</div>
+      </div>
+      <div class="total-card">
+        <div class="total-card-label">Total Linear Length</div>
+        <div class="total-card-val">${m.totalAllLengths.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${escapeHtml(m.lengthUnit)}</div>
+      </div>
+      <div class="total-card">
+        <div class="total-card-label">Total Area / Volume</div>
+        <div class="total-card-val">${m.totalAllAreas.toFixed(2)} ${escapeHtml(m.areaUnit)} &middot; ${m.totalAllVolumes.toFixed(2)} ${escapeHtml(m.volumeUnit)}</div>
+      </div>
+      <div class="total-card">
+        <div class="total-card-label">Mapped GPS Points</div>
+        <div class="total-card-val">${mapData.allPoints.length} pts</div>
+      </div>
+    </div>
+  `;
+}
+
+function buildAllInputsTableHtml(
+  project: ConstructionProject,
+  scope: StaticMapScope,
+  sectionNum: number
+): string {
+  const inputs = buildAllRecordedInputs(project, scope);
+  if (inputs.length === 0) return '';
+
+  const rowsHtml = inputs
+    .map(
+      (item, idx) => `
+      <tr>
+        <td class="center">${idx + 1}</td>
+        <td><span class="cat-tag">${escapeHtml(item.category)}</span></td>
+        <td><strong>${escapeHtml(item.fieldLabel)}</strong></td>
+        <td>${escapeHtml(item.rawInput)}</td>
+        <td class="num">${escapeHtml(item.computedTotal)}</td>
+        <td class="mono muted">${escapeHtml(item.capturedGps || 'Not captured')}</td>
+      </tr>
+    `
+    )
+    .join('');
+
+  return `
+    <h2>${sectionNum}. All Recorded Field Inputs &amp; Multi-Sample Entries (${inputs.length})</h2>
+    <table>
+      <thead>
+        <tr>
+          <th class="center" style="width:32px;">#</th>
+          <th style="width:110px;">Category</th>
+          <th style="width:185px;">Input Field</th>
+          <th>Recorded Input / Samples</th>
+          <th class="num" style="width:145px;">Computed Total / Avg</th>
+          <th style="width:155px;">Captured GPS (Lat, Lng)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+  `;
+}
 
 function buildMapSectionHtml(
   project: ConstructionProject,
   scope: StaticMapScope,
-  headingText: string
+  headingText: string,
+  liveGps?: GpsCoordinate
 ): string {
-  const mapUrl = buildSiteStaticMapUrl(project, {
+  const staticMapUrl = buildSiteStaticMapUrl(project, {
     scope,
     mapType: 'hybrid',
     size: '640x360',
     scale: 2,
+    liveGps,
   });
   const data = getProjectMapData(project, scope);
+  const vectorSvg = buildVectorGeospatialSvg(project, scope, liveGps);
+  const apiKey = getGoogleMapsApiKey();
+  const totalPts = data.allPoints.length + (liveGps ? 1 : 0);
 
   const coordRows: string[] = [];
   if (data.sitePin) {
     coordRows.push(
-      `<tr><td>Site Anchor Pin (S)</td><td class="mono">${data.sitePin.lat.toFixed(6)}&deg;, ${data.sitePin.lng.toFixed(6)}&deg;</td><td class="muted">${escapeHtml(project.location || 'Pinned Site Location')}</td></tr>`
+      `<tr><td><strong>Site Anchor Pin (S)</strong></td><td class="mono">${data.sitePin.lat.toFixed(6)}&deg;, ${data.sitePin.lng.toFixed(6)}&deg;</td><td class="muted">${escapeHtml(project.location || 'Pinned Site Location')}</td></tr>`
+    );
+  }
+  if (liveGps) {
+    coordRows.push(
+      `<tr><td><strong>Live Surveyor GPS (G)</strong></td><td class="mono">${liveGps.lat.toFixed(6)}&deg;, ${liveGps.lng.toFixed(6)}&deg;</td><td class="muted">Real-time device position${liveGps.accuracy ? ` (&plusmn;${Math.round(liveGps.accuracy)}m)` : ''}</td></tr>`
     );
   }
   if (scope !== 'fencing' && (data.roadStart || data.roadEnd)) {
     const roadSec = project.roadSections[0];
     if (data.roadStart) {
       coordRows.push(
-        `<tr><td>Road Start (A)</td><td class="mono">${data.roadStart.lat.toFixed(6)}&deg;, ${data.roadStart.lng.toFixed(6)}&deg;</td><td class="muted">Chainage ${escapeHtml(roadSec?.chainageStart || '0+000')}</td></tr>`
+        `<tr><td><strong>Road Start (A)</strong></td><td class="mono">${data.roadStart.lat.toFixed(6)}&deg;, ${data.roadStart.lng.toFixed(6)}&deg;</td><td class="muted">Chainage ${escapeHtml(roadSec?.chainageStart || '0+000')}</td></tr>`
       );
     }
     if (data.roadEnd) {
       coordRows.push(
-        `<tr><td>Road End (B)</td><td class="mono">${data.roadEnd.lat.toFixed(6)}&deg;, ${data.roadEnd.lng.toFixed(6)}&deg;</td><td class="muted">Chainage ${escapeHtml(roadSec?.chainageEnd || formatChainage(roadSec?.lengthMeters || 0))}</td></tr>`
+        `<tr><td><strong>Road End (B)</strong></td><td class="mono">${data.roadEnd.lat.toFixed(6)}&deg;, ${data.roadEnd.lng.toFixed(6)}&deg;</td><td class="muted">Chainage ${escapeHtml(roadSec?.chainageEnd || formatChainage(roadSec?.lengthMeters || 0))}</td></tr>`
       );
     }
   }
@@ -346,158 +798,726 @@ function buildMapSectionHtml(
         ? `${first.gps.lat.toFixed(6)}&deg;, ${first.gps.lng.toFixed(6)}&deg;`
         : `${first.gps.lat.toFixed(6)}&deg;, ${first.gps.lng.toFixed(6)}&deg; to ${last.gps.lat.toFixed(6)}&deg;, ${last.gps.lng.toFixed(6)}&deg;`;
     coordRows.push(
-      `<tr><td>GPS-Tagged Fence Posts</td><td class="mono">${spanText}</td><td class="muted">${data.gpsPosts.length} of ${project.fencePosts.length} posts mapped</td></tr>`
+      `<tr><td><strong>GPS-Tagged Fence Posts</strong></td><td class="mono">${spanText}</td><td class="muted">${data.gpsPosts.length} of ${project.fencePosts.length} posts mapped</td></tr>`
     );
   }
+  data.inputLocations.forEach((loc: InputLocationPoint, idx: number) => {
+    coordRows.push(
+      `<tr><td><strong>Input Pin #${idx + 1}:</strong> ${escapeHtml(loc.fieldLabel)}</td><td class="mono">${loc.gps.lat.toFixed(6)}&deg;, ${loc.gps.lng.toFixed(6)}&deg;</td><td class="muted">${escapeHtml(loc.valueSummary || 'Captured on input')} &bull; ${escapeHtml(new Date(loc.capturedAt).toLocaleTimeString())}</td></tr>`
+    );
+  });
 
-  if (!mapUrl && coordRows.length === 0) {
-    return `
-      <div class="map-section">
-        <h2>${escapeHtml(headingText)}</h2>
-        <div class="remarks-box muted">
-          No GPS coordinates or site address have been pinned yet. Open the <strong>Overview</strong> tab to search a site address, lock device GPS, or drop a map pin before exporting.
-        </div>
-      </div>
-    `;
-  }
+  const mapPayload = JSON.stringify({
+    sitePin: data.sitePin ?? null,
+    roadStart: data.roadStart ?? null,
+    roadEnd: data.roadEnd ?? null,
+    gpsPosts: data.gpsPosts.map((p, i) => ({
+      label: `P${i + 1}`,
+      title: `${p.postType.replace('_', ' ')} #${i + 1}`,
+      lat: p.gps.lat,
+      lng: p.gps.lng,
+    })),
+    inputLocations: data.inputLocations.map((l, i) => ({
+      label: `I${i + 1}`,
+      title: `${l.fieldLabel}${l.valueSummary ? ` (${l.valueSummary})` : ''}`,
+      lat: l.gps.lat,
+      lng: l.gps.lng,
+    })),
+    liveGps: liveGps ?? null,
+  }).replace(/</g, '\\u003c');
 
-  return `
-    <div class="map-section">
-      <h2>${escapeHtml(headingText)}</h2>
-      ${mapUrl ? `
-        <div class="map-frame">
+  const bothPrintVisuals = Boolean(staticMapUrl && vectorSvg);
+  const staticAndVectorBlock = (staticMapUrl || vectorSvg) ? `
+    <div class="print-map-grid ${bothPrintVisuals ? 'two-col' : ''}">
+      ${staticMapUrl ? `
+        <div class="map-frame" style="margin-bottom:0;">
           <img
-            src="${escapeHtml(mapUrl)}"
+            src="${escapeHtml(staticMapUrl)}"
             alt="Site location satellite map for ${escapeHtml(project.name)}"
             class="report-map-img"
             onerror="this.parentElement.style.display='none'"
           />
           <div class="map-caption">
-            <span><strong>Map Layer:</strong> Hybrid Satellite &amp; Roads &bull; <strong>Legend:</strong> S = Site Anchor, A/B = Road Alignment, Amber = Fence Posts</span>
-            <span class="mono">${data.allPoints.length} GPS point${data.allPoints.length === 1 ? '' : 's'}</span>
+            <span><strong>Satellite Map</strong> (S=Site, A/B=Road, I=Inputs, G=GPS)</span>
+            <span class="mono">${totalPts} pt${totalPts === 1 ? '' : 's'}</span>
           </div>
         </div>
       ` : ''}
+      ${vectorSvg ? `
+        <div class="map-frame" style="margin-bottom:0;">
+          ${vectorSvg}
+        </div>
+      ` : ''}
+    </div>
+  ` : '';
+
+  return `
+    <div class="map-section">
+      <h2>${escapeHtml(headingText)}</h2>
+      ${apiKey ? `
+        <div class="map-frame no-print">
+          <div id="realtime-report-map" class="realtime-map-box"></div>
+          <div class="map-caption">
+            <span><strong>Real-Time Interactive Map:</strong> Live GPS + Input Pins + Road &amp; Fence Polylines</span>
+            <span id="realtime-gps-status" class="mono">Syncing GPS...</span>
+          </div>
+        </div>
+        <div class="print-only">
+          ${staticAndVectorBlock}
+        </div>
+      ` : staticAndVectorBlock}
       ${coordRows.length > 0 ? `
         <table>
           <thead>
             <tr>
-              <th style="width:180px;">Geospatial Reference</th>
-              <th>WGS84 Coordinates (Lat, Lng)</th>
-              <th>Notes / Chainage</th>
+              <th style="width:210px;">Geospatial Reference</th>
+              <th style="width:205px;">WGS84 Coordinates (Lat, Lng)</th>
+              <th>Notes / Chainage / Timestamp</th>
             </tr>
           </thead>
           <tbody>
             ${coordRows.join('')}
           </tbody>
         </table>
-      ` : ''}
+      ` : `
+        <div class="remarks-box muted">
+          No GPS coordinates captured yet. Click any measurement input with GPS enabled or pin a location on the map to record geospatial coordinates.
+        </div>
+      `}
+      <script id="report-map-data" type="application/json">${mapPayload}</script>
     </div>
   `;
 }
 
-export function exportProjectToExcel(project: ConstructionProject) {
+function buildRealtimeMapScript(apiKey: string): string {
+  if (!apiKey) return '';
+  return `
+    <script>
+      (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=\`https://maps.\${c}apis.com/maps/api/js?\`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({
+        key: ${JSON.stringify(apiKey)},
+        v: "weekly"
+      });
+
+      (async function initRealtimeReportMap() {
+        var container = document.getElementById('realtime-report-map');
+        var dataEl = document.getElementById('report-map-data');
+        var statusEl = document.getElementById('realtime-gps-status');
+        if (!container || !dataEl) return;
+        try {
+          var payload = JSON.parse(dataEl.textContent || '{}');
+          var mapsLib = await google.maps.importLibrary('maps');
+          var markerLib = await google.maps.importLibrary('marker');
+          var coreLib = await google.maps.importLibrary('core');
+
+          var fallbackCenter = payload.sitePin || payload.liveGps || payload.roadStart || (payload.inputLocations && payload.inputLocations[0]) || (payload.gpsPosts && payload.gpsPosts[0]) || { lat: 20, lng: 0 };
+          var map = new mapsLib.Map(container, {
+            center: { lat: fallbackCenter.lat, lng: fallbackCenter.lng },
+            zoom: fallbackCenter.lat === 20 && fallbackCenter.lng === 0 ? 2 : 17,
+            mapTypeId: 'hybrid',
+            mapId: 'DEMO_MAP_ID',
+            internalUsageAttributionIds: ['gmp_mcp_codeassist_v1_aistudio']
+          });
+
+          var bounds = new coreLib.LatLngBounds();
+          var count = 0;
+
+          function addPin(lat, lng, title, bg, border, glyph) {
+            var pin = new markerLib.PinElement({
+              background: bg,
+              borderColor: border,
+              glyphColor: '#ffffff',
+              glyphText: glyph
+            });
+            new markerLib.AdvancedMarkerElement({
+              map: map,
+              position: { lat: lat, lng: lng },
+              title: title,
+              content: pin.element
+            });
+            bounds.extend({ lat: lat, lng: lng });
+            count++;
+          }
+
+          if (payload.sitePin) addPin(payload.sitePin.lat, payload.sitePin.lng, 'Site Anchor (S)', '#e11d48', '#9f1239', 'S');
+          if (payload.roadStart) addPin(payload.roadStart.lat, payload.roadStart.lng, 'Road Start (A)', '#059669', '#065f46', 'A');
+          if (payload.roadEnd) addPin(payload.roadEnd.lat, payload.roadEnd.lng, 'Road End (B)', '#059669', '#065f46', 'B');
+          if (payload.roadStart && payload.roadEnd) {
+            new mapsLib.Polyline({
+              map: map,
+              path: [{ lat: payload.roadStart.lat, lng: payload.roadStart.lng }, { lat: payload.roadEnd.lat, lng: payload.roadEnd.lng }],
+              strokeColor: '#059669',
+              strokeWeight: 4,
+              geodesic: true
+            });
+          }
+          if (payload.gpsPosts && payload.gpsPosts.length > 0) {
+            payload.gpsPosts.forEach(function(p) { addPin(p.lat, p.lng, p.title, '#d97706', '#b45309', p.label); });
+            if (payload.gpsPosts.length >= 2) {
+              new mapsLib.Polyline({
+                map: map,
+                path: payload.gpsPosts.map(function(p) { return { lat: p.lat, lng: p.lng }; }),
+                strokeColor: '#d97706',
+                strokeWeight: 3,
+                geodesic: true
+              });
+            }
+          }
+          if (payload.inputLocations && payload.inputLocations.length > 0) {
+            payload.inputLocations.forEach(function(l) { addPin(l.lat, l.lng, l.title, '#7c3aed', '#5b21b6', l.label); });
+          }
+
+          if (count > 1) {
+            map.fitBounds(bounds, 40);
+          }
+
+          var liveMarker = null;
+          function updateLivePos(lat, lng) {
+            var pos = { lat: lat, lng: lng };
+            if (!liveMarker) {
+              var dot = document.createElement('div');
+              dot.style.width = '14px';
+              dot.style.height = '14px';
+              dot.style.borderRadius = '9999px';
+              dot.style.background = '#0ea5e9';
+              dot.style.border = '2px solid #ffffff';
+              dot.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
+              liveMarker = new markerLib.AdvancedMarkerElement({
+                map: map,
+                position: pos,
+                title: 'Live Device GPS',
+                content: dot
+              });
+              if (count === 0) {
+                map.setCenter(pos);
+                map.setZoom(17);
+              }
+            } else {
+              liveMarker.position = pos;
+            }
+            if (statusEl) statusEl.textContent = 'Live GPS: ' + lat.toFixed(6) + ', ' + lng.toFixed(6);
+          }
+
+          if (payload.liveGps) {
+            updateLivePos(payload.liveGps.lat, payload.liveGps.lng);
+          }
+
+          if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(
+              function(pos) { updateLivePos(pos.coords.latitude, pos.coords.longitude); },
+              function() { if (statusEl && !payload.liveGps) statusEl.textContent = 'Live GPS unavailable'; },
+              { enableHighAccuracy: true, maximumAge: 5000 }
+            );
+          }
+        } catch (err) {
+          if (statusEl) statusEl.textContent = 'Map preview offline';
+        }
+      })();
+    </script>
+  `;
+}
+
+export function buildStandaloneReportHtml(
+  project: ConstructionProject,
+  scope: StaticMapScope = 'all',
+  liveGps?: GpsCoordinate
+): string {
   const settings = getProjectSettings(project);
   const { items, customItems } = settings;
-  const enabledCustom = customItems.filter(c => c.enabled);
-  const m = computeMeasurements(project);
+  const m = computeMeasurements(project, scope);
+  const apiKey = getGoogleMapsApiKey();
+
+  const measurementRows: string[] = [];
+  let rowNum = 1;
+
+  if (scope !== 'road') {
+    if (items.anglePosts.enabled) {
+      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Angle Posts (Corner / End)</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalAngle}</td><td class="center">${escapeHtml(items.anglePosts.unit)}</td></tr>`);
+    }
+    if (items.intermediatePosts.enabled) {
+      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Intermediate Posts</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalIntermed}</td><td class="center">${escapeHtml(items.intermediatePosts.unit)}</td></tr>`);
+    }
+    if (items.strutPosts.enabled) {
+      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Strut Posts</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalStrut}</td><td class="center">${escapeHtml(items.strutPosts.unit)}</td></tr>`);
+    }
+    if (items.gatePosts.enabled) {
+      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Gate Posts</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalGate}</td><td class="center">${escapeHtml(items.gatePosts.unit)}</td></tr>`);
+    }
+    if (items.chainLinkMesh.enabled) {
+      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Chain-Link Mesh</td><td class="muted">L: ${m.meshLen} ${escapeHtml(items.chainLinkMesh.unit)} &times; W: ${m.meshWidth} ${escapeHtml(m.lengthUnit)} (Area: ${m.meshArea.toFixed(2)} ${escapeHtml(m.areaUnit)})</td><td class="num">${m.meshLen.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="center">${escapeHtml(items.chainLinkMesh.unit)}</td></tr>`);
+    }
+    if (items.rrmWall.enabled) {
+      const wDetail = m.rrmWidthEntries.length > 0 ? `W samples [${m.rrmWidthEntries.join(', ')}] Avg ${m.rrmWidth}` : `W: ${m.rrmWidth}`;
+      const hDetail = m.rrmHeightEntries.length > 0 ? `H samples [${m.rrmHeightEntries.join(', ')}] Avg ${m.rrmHeight}` : `H: ${m.rrmHeight}`;
+      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>RMM Wall</td><td class="muted">L: ${m.rrmLen.toFixed(2)} ${escapeHtml(m.lengthUnit)} &times; ${escapeHtml(wDetail)} ${escapeHtml(m.lengthUnit)} &times; ${escapeHtml(hDetail)} ${escapeHtml(m.lengthUnit)}</td><td class="num">${m.rrmVol.toFixed(2)}</td><td class="center">${escapeHtml(items.rrmWall.unit)}</td></tr>`);
+    }
+  }
+
+  if (scope !== 'fencing') {
+    if (items.roadMeasurement.enabled) {
+      const chainageText = `Ch. ${escapeHtml(m.chainageStart)} &ndash; ${escapeHtml(m.chainageEnd)} &bull; `;
+      const wDetail = m.roadWidthEntries.length > 0 ? `W [${m.roadWidthEntries.join(', ')}] Avg ${m.roadWidth}` : `W: ${m.roadWidth}`;
+      const dDetail = m.roadDepthEntries.length > 0 ? `D [${m.roadDepthEntries.join(', ')}] Avg ${m.roadDepth}` : `D: ${m.roadDepth}`;
+      const roadDetails = m.roadDepth > 0
+        ? `${chainageText}L: ${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)} &times; ${escapeHtml(wDetail)} ${escapeHtml(m.lengthUnit)} &times; ${escapeHtml(dDetail)} ${escapeHtml(m.lengthUnit)} &bull; Area: ${m.roadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${escapeHtml(m.areaUnit)} &bull; Vol: ${m.roadVol.toFixed(2)} ${escapeHtml(m.volumeUnit)}`
+        : `${chainageText}L: ${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)} &times; ${escapeHtml(wDetail)} ${escapeHtml(m.lengthUnit)} &bull; Area: ${m.roadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${escapeHtml(m.areaUnit)}`;
+      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Road Alignment</td><td class="muted">${roadDetails}</td><td class="num">${m.roadLen.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="center">${escapeHtml(items.roadMeasurement.unit)}</td></tr>`);
+    }
+    if (items.sideDrain.enabled) {
+      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Road Side Drain</td><td class="muted">Road &bull; Measured length</td><td class="num">${m.sideDrainLen.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="center">${escapeHtml(items.sideDrain.unit)}</td></tr>`);
+    }
+  }
+
+  const enabledCustom = customItems.filter((c) => {
+    if (!c.enabled) return false;
+    if (scope === 'fencing') return c.category === 'fencing';
+    if (scope === 'road') return c.category === 'road';
+    return true;
+  });
+
+  enabledCustom.forEach((c) => {
+    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>${escapeHtml(c.name)}</td><td class="muted">${escapeHtml(c.category)} &bull; Custom item</td><td class="num">${c.quantity}</td><td class="center">${escapeHtml(c.unit)}</td></tr>`);
+  });
+
+  const totalBadges = [
+    scope !== 'road' ? `<span class="total-pill">Posts: ${m.totalPosts} ${escapeHtml(m.postUnit)}</span>` : '',
+    `<span class="total-pill">Linear: ${m.totalAllLengths.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${escapeHtml(m.lengthUnit)}</span>`,
+    `<span class="total-pill">Area: ${m.totalAllAreas.toFixed(2)} ${escapeHtml(m.areaUnit)}</span>`,
+    `<span class="total-pill">Volume: ${m.totalAllVolumes.toFixed(2)} ${escapeHtml(m.volumeUnit)}</span>`,
+    enabledCustom.length > 0 ? `<span class="total-pill">Custom: ${m.totalCustomQty} items</span>` : '',
+  ]
+    .filter(Boolean)
+    .join('');
+
+  const auditRows: string[] = [];
+  if (scope === 'all' && project.auditInfo) {
+    const a = project.auditInfo;
+    const anyPosts = items.anglePosts.enabled || items.intermediatePosts.enabled || items.strutPosts.enabled || items.gatePosts.enabled;
+    if (anyPosts) {
+      const vp = a.verifiedPostCount ?? m.totalPosts;
+      const diff = cleanVariance(vp, m.totalPosts, 0);
+      auditRows.push(`<tr><td>Fence Posts Total</td><td class="num">${m.totalPosts} ${escapeHtml(m.postUnit)}</td><td class="num">${vp} ${escapeHtml(m.postUnit)}</td><td class="num">${escapeHtml(formatVariance(diff, 0))} ${escapeHtml(m.postUnit)}</td></tr>`);
+    }
+    if (items.chainLinkMesh.enabled) {
+      const vm = a.verifiedMeshLength ?? m.meshLen;
+      const diff = cleanVariance(vm, m.meshLen, 2);
+      auditRows.push(`<tr><td>Chain-Link Mesh Length</td><td class="num">${m.meshLen} ${escapeHtml(items.chainLinkMesh.unit)}</td><td class="num">${vm} ${escapeHtml(items.chainLinkMesh.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(items.chainLinkMesh.unit)}</td></tr>`);
+    }
+    if (items.rrmWall.enabled) {
+      const vr = a.verifiedRrmVolume ?? roundTo(m.rrmVol, 2);
+      const diff = cleanVariance(vr, roundTo(m.rrmVol, 2), 2);
+      auditRows.push(`<tr><td>RMM Wall Volume</td><td class="num">${m.rrmVol.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td><td class="num">${vr.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td><td class="num">${diff > 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td></tr>`);
+    }
+    if (items.roadMeasurement.enabled) {
+      const vrd = a.verifiedRoadLength ?? m.roadLen;
+      const diff = cleanVariance(vrd, m.roadLen, 2);
+      auditRows.push(`<tr><td>Road Length</td><td class="num">${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)}</td><td class="num">${vrd} ${escapeHtml(items.roadMeasurement.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(items.roadMeasurement.unit)}</td></tr>`);
+    }
+    if (items.sideDrain.enabled) {
+      const vsd = a.verifiedSideDrainLength ?? m.sideDrainLen;
+      const diff = cleanVariance(vsd, m.sideDrainLen, 2);
+      auditRows.push(`<tr><td>Road Side Drain</td><td class="num">${m.sideDrainLen} ${escapeHtml(items.sideDrain.unit)}</td><td class="num">${vsd} ${escapeHtml(items.sideDrain.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(items.sideDrain.unit)}</td></tr>`);
+    }
+    enabledCustom.forEach((c) => {
+      const vc = a.verifiedCustomItems?.[c.id] ?? c.quantity;
+      const diff = cleanVariance(vc, c.quantity, 2);
+      auditRows.push(`<tr><td>${escapeHtml(c.name)}</td><td class="num">${c.quantity} ${escapeHtml(c.unit)}</td><td class="num">${vc} ${escapeHtml(c.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(c.unit)}</td></tr>`);
+    });
+  }
+
+  const scopeTitle =
+    scope === 'fencing'
+      ? 'Chain-Link & RMM Fencing Report'
+      : scope === 'road'
+      ? 'Road Works Measurement Report'
+      : 'Site Measurement & Technical Audit Report';
+
+  let nextSectionNum = 1;
+  const summarySecNum = nextSectionNum++;
+  const hasInputs = buildAllRecordedInputs(project, scope).length > 0;
+  const inputsTableHtml = hasInputs ? buildAllInputsTableHtml(project, scope, nextSectionNum++) : '';
+  const mapSecNum = nextSectionNum++;
+  const auditSecNum = nextSectionNum++;
+
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(scopeTitle)} - ${escapeHtml(project.name)}</title>
+        <style>${SHARED_PRINT_CSS}</style>
+      </head>
+      <body>
+        <div class="toolbar-actions no-print">
+          <div>
+            <strong>${escapeHtml(project.name)}</strong> &mdash; Interactive &amp; Printable Site Report
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button type="button" onclick="window.print()">Print / Save PDF</button>
+          </div>
+        </div>
+
+        <div class="report-shell">
+          <div class="doc-header">
+            <div>
+              <div class="doc-kicker">${escapeHtml(scopeTitle)}</div>
+              <h1 class="doc-title">${escapeHtml(project.name)}</h1>
+            </div>
+            <div class="doc-meta-right">
+              <div><strong>Date:</strong> ${escapeHtml(new Date().toLocaleDateString())}</div>
+              <div><strong>Unit System:</strong> ${escapeHtml(settings.unitSystem.toUpperCase())}</div>
+            </div>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-row"><span class="info-label">Client</span><span class="info-val">${escapeHtml(project.clientName || 'N/A')}</span></div>
+            <div class="info-row"><span class="info-label">Location</span><span class="info-val">${escapeHtml(project.location || 'N/A')}</span></div>
+            <div class="info-row"><span class="info-label">Auditor</span><span class="info-val">${escapeHtml(project.auditInfo?.auditorName || 'Pending Assignment')}</span></div>
+            <div class="info-row"><span class="info-label">Audit Status</span><span class="info-val"><span class="badge">${escapeHtml(formatAuditStatus(project.auditInfo?.auditStatus))}</span></span></div>
+          </div>
+
+          ${buildTotalsCardsHtml(project, scope)}
+
+          <h2>${summarySecNum}. Physical Measurement Summary &amp; Totals</h2>
+          <table>
+            <thead>
+              <tr>
+                <th class="center" style="width:32px;">#</th>
+                <th style="width:170px;">Work Item</th>
+                <th>Dimensions / Specification</th>
+                <th class="num" style="width:85px;">Quantity</th>
+                <th class="center" style="width:55px;">Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${measurementRows.length > 0 ? measurementRows.join('') : '<tr><td colspan="5" class="center muted">No measurement items enabled.</td></tr>'}
+              <tr class="totals-row">
+                <td class="center">&Sigma;</td>
+                <td>GRAND TOTALS</td>
+                <td colspan="3">
+                  <div class="totals-pills">${totalBadges}</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          ${inputsTableHtml}
+
+          ${project.auditNotes?.trim() ? `
+            <div class="remarks-box">
+              <strong>Site Audit Notes:</strong>
+              ${escapeHtml(project.auditNotes.trim())}
+            </div>
+          ` : ''}
+
+          ${buildMapSectionHtml(project, scope, `${mapSecNum}. Site Location & Real-Time Geospatial Map`, liveGps)}
+
+          ${scope === 'all' && project.auditInfo ? `
+            <h2>${auditSecNum}. Auditor Verification &amp; Reconciliation</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th class="num" style="width:110px;">Logged</th>
+                  <th class="num" style="width:110px;">Verified</th>
+                  <th class="num" style="width:110px;">Variance</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${auditRows.join('')}
+              </tbody>
+            </table>
+            <div class="remarks-box">
+              <strong>Auditor Remarks (${escapeHtml(project.auditInfo.auditDate)}):</strong>
+              ${escapeHtml(project.auditInfo.generalRemarks || 'No remarks recorded.')}
+            </div>
+          ` : ''}
+
+          <div class="sig-grid">
+            <div class="sig-box">Prepared By (Site Engineer / Surveyor)</div>
+            <div class="sig-box">Verified By (${escapeHtml(project.auditInfo?.auditorName || 'Technical Auditor')})</div>
+          </div>
+
+          <div class="footer">
+            <span>SitePro Measurement &amp; Audit Record</span>
+            <span>Generated ${escapeHtml(new Date().toLocaleString())}</span>
+          </div>
+        </div>
+
+        ${buildRealtimeMapScript(apiKey)}
+      </body>
+    </html>
+  `;
+}
+
+export function downloadStandaloneHtmlReport(
+  project: ConstructionProject,
+  scope: StaticMapScope = 'all',
+  liveGps?: GpsCoordinate
+) {
+  const html = buildStandaloneReportHtml(project, scope, liveGps);
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const suffix = scope === 'all' ? 'full_report' : `${scope}_report`;
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${project.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${suffix}.html`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function printHtmlViaHiddenFrame(html: string) {
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document;
+  if (!doc || !iframe.contentWindow) {
+    document.body.removeChild(iframe);
+    window.print();
+    return;
+  }
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  let printed = false;
+  const triggerPrint = () => {
+    if (printed) return;
+    printed = true;
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } finally {
+      window.setTimeout(() => {
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+      }, 1500);
+    }
+  };
+
+  const imgs = Array.from(doc.images || []);
+  if (imgs.length === 0) {
+    window.setTimeout(triggerPrint, 250);
+    return;
+  }
+
+  let remaining = imgs.length;
+  const onAssetSettled = () => {
+    remaining -= 1;
+    if (remaining <= 0) {
+      window.setTimeout(triggerPrint, 180);
+    }
+  };
+
+  imgs.forEach((img) => {
+    if (img.complete) {
+      onAssetSettled();
+    } else {
+      img.addEventListener('load', onAssetSettled, { once: true });
+      img.addEventListener('error', onAssetSettled, { once: true });
+    }
+  });
+
+  // Safety fallback in case static map network request stalls
+  window.setTimeout(triggerPrint, 3500);
+}
+
+export function exportChainLinkPdf(project: ConstructionProject, liveGps?: GpsCoordinate) {
+  printHtmlViaHiddenFrame(buildStandaloneReportHtml(project, 'fencing', liveGps));
+}
+
+export function exportRoadPdf(project: ConstructionProject, liveGps?: GpsCoordinate) {
+  printHtmlViaHiddenFrame(buildStandaloneReportHtml(project, 'road', liveGps));
+}
+
+export function exportProjectToPdf(project: ConstructionProject, liveGps?: GpsCoordinate) {
+  printHtmlViaHiddenFrame(buildStandaloneReportHtml(project, 'all', liveGps));
+}
+
+export function exportProjectToExcel(
+  project: ConstructionProject,
+  scope: StaticMapScope = 'all'
+) {
+  const settings = getProjectSettings(project);
+  const { items, customItems } = settings;
+  const enabledCustom = customItems.filter((c) => {
+    if (!c.enabled) return false;
+    if (scope === 'fencing') return c.category === 'fencing';
+    if (scope === 'road') return c.category === 'road';
+    return true;
+  });
+  const m = computeMeasurements(project, scope);
+  const allInputs = buildAllRecordedInputs(project, scope);
+  const mapData = getProjectMapData(project, scope);
+
+  const scopeLabel =
+    scope === 'fencing'
+      ? 'Chain-Link & RMM Fencing'
+      : scope === 'road'
+      ? 'Road Works'
+      : 'Full Site Audit';
 
   const rows: string[] = [];
-  rows.push(`SITE MEASUREMENT & AUDIT REPORT`);
+  rows.push(`SITE MEASUREMENT & TECHNICAL AUDIT REPORT`);
+  rows.push(`Report Scope,${csvCell(scopeLabel)}`);
   rows.push(`Project Name,${csvCell(project.name)}`);
   rows.push(`Client,${csvCell(project.clientName || 'N/A')}`);
   rows.push(`Location,${csvCell(project.location || 'N/A')}`);
+  rows.push(`Auditor,${csvCell(project.auditInfo?.auditorName || 'Pending Assignment')}`);
+  rows.push(`Audit Status,${csvCell(formatAuditStatus(project.auditInfo?.auditStatus))}`);
   if (project.siteCoordinates) {
-    rows.push(`Site Coordinates (Lat/Lng),${csvCell(`${project.siteCoordinates.lat.toFixed(6)}, ${project.siteCoordinates.lng.toFixed(6)}`)}`);
+    rows.push(
+      `Site Anchor Coordinates,${csvCell(`${project.siteCoordinates.lat.toFixed(6)}, ${project.siteCoordinates.lng.toFixed(6)}`)}`
+    );
   }
   const roadSec0 = project.roadSections[0];
-  if (roadSec0?.startGps) {
-    rows.push(`Road Start GPS,${csvCell(`${roadSec0.startGps.lat.toFixed(6)}, ${roadSec0.startGps.lng.toFixed(6)}`)}`);
+  if (scope !== 'fencing' && roadSec0?.startGps) {
+    rows.push(
+      `Road Start GPS (A),${csvCell(`${roadSec0.startGps.lat.toFixed(6)}, ${roadSec0.startGps.lng.toFixed(6)}`)}`
+    );
   }
-  if (roadSec0?.endGps) {
-    rows.push(`Road End GPS,${csvCell(`${roadSec0.endGps.lat.toFixed(6)}, ${roadSec0.endGps.lng.toFixed(6)}`)}`);
+  if (scope !== 'fencing' && roadSec0?.endGps) {
+    rows.push(
+      `Road End GPS (B),${csvCell(`${roadSec0.endGps.lat.toFixed(6)}, ${roadSec0.endGps.lng.toFixed(6)}`)}`
+    );
   }
   rows.push(`Unit System,${csvCell(settings.unitSystem.toUpperCase())}`);
-  rows.push(`Report Date,${csvCell(new Date().toLocaleDateString())}`);
+  rows.push(`Exported On,${csvCell(new Date().toLocaleString())}`);
   if (project.auditNotes?.trim()) {
     rows.push(`Audit Notes,${csvCell(project.auditNotes.trim())}`);
   }
   rows.push('');
 
-  rows.push(`MEASUREMENT SUMMARY`);
-  rows.push(`#,Category,Item Description,Dimensions / Details,Measured Quantity,Unit`);
+  rows.push(`1. PHYSICAL MEASUREMENT SUMMARY & TOTALS`);
+  rows.push(`#,Category,Work Item,Dimensions / Samples / Specification,Quantity,Unit`);
 
   let idx = 1;
-  if (items.anglePosts.enabled) {
-    rows.push(`${idx++},Fencing,Angle Posts (Corner / End),Physical count,${m.totalAngle},${csvCell(items.anglePosts.unit)}`);
+  if (scope !== 'road') {
+    if (items.anglePosts.enabled) {
+      rows.push(`${idx++},Fencing,Angle Posts (Corner / End),Physical count,${m.totalAngle},${csvCell(items.anglePosts.unit)}`);
+    }
+    if (items.intermediatePosts.enabled) {
+      rows.push(`${idx++},Fencing,Intermediate Posts,Physical count,${m.totalIntermed},${csvCell(items.intermediatePosts.unit)}`);
+    }
+    if (items.strutPosts.enabled) {
+      rows.push(`${idx++},Fencing,Strut Posts,Physical count,${m.totalStrut},${csvCell(items.strutPosts.unit)}`);
+    }
+    if (items.gatePosts.enabled) {
+      rows.push(`${idx++},Fencing,Gate Posts,Physical count,${m.totalGate},${csvCell(items.gatePosts.unit)}`);
+    }
+    if (items.chainLinkMesh.enabled) {
+      rows.push(
+        `${idx++},Fencing,Chain-Link Mesh,${csvCell(`L: ${m.meshLen} ${items.chainLinkMesh.unit} x W: ${m.meshWidth} ${m.lengthUnit} (Area: ${m.meshArea.toFixed(2)} ${m.areaUnit})`)},${m.meshLen.toFixed(2)},${csvCell(items.chainLinkMesh.unit)}`
+      );
+    }
+    if (items.rrmWall.enabled) {
+      const wSamples = m.rrmWidthEntries.length > 0 ? ` | W samples: [${m.rrmWidthEntries.join('; ')}]` : '';
+      const hSamples = m.rrmHeightEntries.length > 0 ? ` | H samples: [${m.rrmHeightEntries.join('; ')}]` : '';
+      rows.push(
+        `${idx++},Fencing,RMM Wall,${csvCell(`L: ${m.rrmLen.toFixed(2)} ${m.lengthUnit} x W: ${m.rrmWidth.toFixed(2)} ${m.lengthUnit} x H: ${m.rrmHeight.toFixed(2)} ${m.lengthUnit}${wSamples}${hSamples}`)},${m.rrmVol.toFixed(2)},${csvCell(items.rrmWall.unit)}`
+      );
+    }
   }
-  if (items.intermediatePosts.enabled) {
-    rows.push(`${idx++},Fencing,Intermediate Posts,Physical count,${m.totalIntermed},${csvCell(items.intermediatePosts.unit)}`);
-  }
-  if (items.strutPosts.enabled) {
-    rows.push(`${idx++},Fencing,Strut Posts,Physical count,${m.totalStrut},${csvCell(items.strutPosts.unit)}`);
-  }
-  if (items.gatePosts.enabled) {
-    rows.push(`${idx++},Fencing,Gate Posts,Physical count,${m.totalGate},${csvCell(items.gatePosts.unit)}`);
-  }
-  if (items.chainLinkMesh.enabled) {
-    rows.push(
-      `${idx++},Fencing,Chain-Link Mesh,${csvCell(`L: ${m.meshLen} ${items.chainLinkMesh.unit} x W: ${m.meshWidth} ${m.lengthUnit} (Area: ${m.meshArea.toFixed(1)} ${m.areaUnit})`)},${m.meshLen},${csvCell(items.chainLinkMesh.unit)}`
-    );
-  }
-  if (items.rrmWall.enabled) {
-    rows.push(
-      `${idx++},Fencing,RRM Foundation Wall,${csvCell(`L: ${m.rrmLen.toFixed(2)} ${m.lengthUnit} x W: ${m.rrmWidth.toFixed(2)} ${m.lengthUnit} x H: ${m.rrmHeight.toFixed(2)} ${m.lengthUnit}`)},${m.rrmVol.toFixed(2)},${csvCell(items.rrmWall.unit)}`
-    );
-  }
-  if (items.roadMeasurement.enabled) {
-    const chainagePrefix = `Chainage: ${m.chainageStart} to ${m.chainageEnd} | `;
-    const roadDetails = m.roadDepth > 0
-      ? `${chainagePrefix}L: ${m.roadLen} ${items.roadMeasurement.unit} x W: ${m.roadWidth} ${m.lengthUnit} x D: ${m.roadDepth} ${m.lengthUnit} (Area: ${m.roadArea.toFixed(1)} ${m.areaUnit} | Vol: ${m.roadVol.toFixed(1)} ${m.volumeUnit})`
-      : `${chainagePrefix}L: ${m.roadLen} ${items.roadMeasurement.unit} x W: ${m.roadWidth} ${m.lengthUnit} (Area: ${m.roadArea.toFixed(1)} ${m.areaUnit})`;
-    rows.push(`${idx++},Road,Road Measurement,${csvCell(roadDetails)},${m.roadLen},${csvCell(items.roadMeasurement.unit)}`);
-  }
-  if (items.sideDrain.enabled) {
-    rows.push(`${idx++},Road,Road Side Drain,Measured length,${m.sideDrainLen},${csvCell(items.sideDrain.unit)}`);
+  if (scope !== 'fencing') {
+    if (items.roadMeasurement.enabled) {
+      const chainagePrefix = `Chainage: ${m.chainageStart} to ${m.chainageEnd} | `;
+      const wSamples = m.roadWidthEntries.length > 0 ? ` | W samples: [${m.roadWidthEntries.join('; ')}]` : '';
+      const dSamples = m.roadDepthEntries.length > 0 ? ` | D samples: [${m.roadDepthEntries.join('; ')}]` : '';
+      const roadDetails =
+        m.roadDepth > 0
+          ? `${chainagePrefix}L: ${m.roadLen} ${items.roadMeasurement.unit} x W: ${m.roadWidth} ${m.lengthUnit} x D: ${m.roadDepth} ${m.lengthUnit}${wSamples}${dSamples} (Area: ${m.roadArea.toFixed(2)} ${m.areaUnit} | Vol: ${m.roadVol.toFixed(2)} ${m.volumeUnit})`
+          : `${chainagePrefix}L: ${m.roadLen} ${items.roadMeasurement.unit} x W: ${m.roadWidth} ${m.lengthUnit}${wSamples} (Area: ${m.roadArea.toFixed(2)} ${m.areaUnit})`;
+      rows.push(`${idx++},Road,Road Alignment,${csvCell(roadDetails)},${m.roadLen.toFixed(2)},${csvCell(items.roadMeasurement.unit)}`);
+    }
+    if (items.sideDrain.enabled) {
+      rows.push(`${idx++},Road,Road Side Drain,Measured length,${m.sideDrainLen.toFixed(2)},${csvCell(items.sideDrain.unit)}`);
+    }
   }
   enabledCustom.forEach((c) => {
     rows.push(`${idx++},${csvCell(c.category)},${csvCell(c.name)},Custom item,${c.quantity},${csvCell(c.unit)}`);
   });
 
-  if (project.auditInfo) {
+  if (scope !== 'road') {
+    rows.push(`TOTAL,Fencing,Total Fence Posts,All enabled post types,${m.totalPosts},${csvCell(m.postUnit)}`);
+  }
+  rows.push(`TOTAL,Linear,Total Linear Length,Mesh + RMM + Road + Drain,${m.totalAllLengths.toFixed(2)},${csvCell(m.lengthUnit)}`);
+  rows.push(`TOTAL,Area,Total Surface Area,Mesh + Road surface,${m.totalAllAreas.toFixed(2)},${csvCell(m.areaUnit)}`);
+  rows.push(`TOTAL,Volume,Total Volume,RMM Masonry + Road Earthwork,${m.totalAllVolumes.toFixed(2)},${csvCell(m.volumeUnit)}`);
+  if (enabledCustom.length > 0) {
+    rows.push(`TOTAL,Custom,Total Custom Quantities,Sum of active custom items,${m.totalCustomQty},items`);
+  }
+  rows.push(`TOTAL,Geospatial,Total Mapped GPS Points,Site + Road + Posts + Input Pins,${mapData.allPoints.length},points`);
+
+  rows.push('');
+  rows.push(`2. ALL RECORDED FIELD INPUTS & MULTI-SAMPLES`);
+  rows.push(`#,Category,Input Field,Recorded Input / Samples,Computed Total / Average,Captured GPS (Lat / Lng)`);
+  allInputs.forEach((inp, i) => {
+    rows.push(
+      `${i + 1},${csvCell(inp.category)},${csvCell(inp.fieldLabel)},${csvCell(inp.rawInput)},${csvCell(inp.computedTotal)},${csvCell(inp.capturedGps || 'Not captured')}`
+    );
+  });
+
+  if (scope !== 'road' && project.fencePosts.length > 0) {
+    rows.push('');
+    rows.push(`3. INDIVIDUAL FENCE POST ENTRIES`);
+    rows.push(`#,Post Type,Height (${m.lengthUnit}),Latitude,Longitude,Accuracy (m),Timestamp`);
+    project.fencePosts.forEach((p, i) => {
+      rows.push(
+        `${i + 1},${csvCell(p.postType)},${p.heightMeters},${p.gps ? p.gps.lat.toFixed(6) : ''},${p.gps ? p.gps.lng.toFixed(6) : ''},${p.gps?.accuracy ? Math.round(p.gps.accuracy) : ''},${csvCell(new Date(p.createdAt).toLocaleString())}`
+      );
+    });
+  }
+
+  if (mapData.inputLocations.length > 0) {
+    rows.push('');
+    rows.push(`CAPTURED INPUT LOCATION PINS (MAP LOG)`);
+    rows.push(`#,Input Field,Recorded Value,Latitude,Longitude,Accuracy (m),Timestamp`);
+    mapData.inputLocations.forEach((loc, i) => {
+      rows.push(
+        `${i + 1},${csvCell(loc.fieldLabel)},${csvCell(loc.valueSummary || '')},${loc.gps.lat.toFixed(6)},${loc.gps.lng.toFixed(6)},${loc.gps.accuracy ? Math.round(loc.gps.accuracy) : ''},${csvCell(new Date(loc.capturedAt).toLocaleString())}`
+      );
+    });
+  }
+
+  if (scope === 'all' && project.auditInfo) {
     const a = project.auditInfo;
     rows.push('');
-    rows.push(`AUDITOR VERIFICATION`);
-    rows.push(`Auditor Name,${csvCell(a.auditorName || 'Pending')}`);
-    rows.push(`Audit Date,${csvCell(a.auditDate)}`);
-    rows.push(`Compliance Status,${csvCell(formatAuditStatus(a.auditStatus))}`);
+    rows.push(`AUDITOR VERIFICATION & RECONCILIATION`);
+    rows.push(`Auditor Name,${csvCell(a.auditorName || 'Pending')},Audit Date,${csvCell(a.auditDate)},Status,${csvCell(formatAuditStatus(a.auditStatus))}`);
     rows.push(`Remarks,${csvCell(a.generalRemarks || 'None')}`);
-    rows.push('');
     rows.push(`Item,Logged,Physically Verified,Variance,Unit`);
     const anyPosts = items.anglePosts.enabled || items.intermediatePosts.enabled || items.strutPosts.enabled || items.gatePosts.enabled;
     if (anyPosts) {
       const vp = a.verifiedPostCount ?? m.totalPosts;
-      rows.push(`Fence Posts Total,${m.totalPosts},${vp},${vp - m.totalPosts},${csvCell(m.postUnit)}`);
+      rows.push(`Fence Posts Total,${m.totalPosts},${vp},${cleanVariance(vp, m.totalPosts, 0)},${csvCell(m.postUnit)}`);
     }
     if (items.chainLinkMesh.enabled) {
       const vm = a.verifiedMeshLength ?? m.meshLen;
-      rows.push(`Chain-Link Mesh,${m.meshLen},${vm},${vm - m.meshLen},${csvCell(items.chainLinkMesh.unit)}`);
+      rows.push(`Chain-Link Mesh,${m.meshLen},${vm},${cleanVariance(vm, m.meshLen, 2)},${csvCell(items.chainLinkMesh.unit)}`);
     }
     if (items.rrmWall.enabled) {
-      const vr = a.verifiedRrmVolume ?? Number(m.rrmVol.toFixed(2));
-      rows.push(`RRM Foundation Wall,${m.rrmVol.toFixed(2)},${vr.toFixed(2)},${(vr - m.rrmVol).toFixed(2)},${csvCell(items.rrmWall.unit)}`);
+      const vr = a.verifiedRrmVolume ?? roundTo(m.rrmVol, 2);
+      const diff = cleanVariance(vr, roundTo(m.rrmVol, 2), 2);
+      rows.push(`RMM Wall,${m.rrmVol.toFixed(2)},${vr.toFixed(2)},${diff.toFixed(2)},${csvCell(items.rrmWall.unit)}`);
     }
     if (items.roadMeasurement.enabled) {
       const vrd = a.verifiedRoadLength ?? m.roadLen;
-      rows.push(`Road Length,${m.roadLen},${vrd},${vrd - m.roadLen},${csvCell(items.roadMeasurement.unit)}`);
+      rows.push(`Road Length,${m.roadLen},${vrd},${cleanVariance(vrd, m.roadLen, 2)},${csvCell(items.roadMeasurement.unit)}`);
     }
     if (items.sideDrain.enabled) {
       const vsd = a.verifiedSideDrainLength ?? m.sideDrainLen;
-      rows.push(`Side Drain,${m.sideDrainLen},${vsd},${vsd - m.sideDrainLen},${csvCell(items.sideDrain.unit)}`);
+      rows.push(`Side Drain,${m.sideDrainLen},${vsd},${cleanVariance(vsd, m.sideDrainLen, 2)},${csvCell(items.sideDrain.unit)}`);
     }
     enabledCustom.forEach((c) => {
       const vc = a.verifiedCustomItems?.[c.id] ?? c.quantity;
-      rows.push(`${csvCell(c.name)},${c.quantity},${vc},${vc - c.quantity},${csvCell(c.unit)}`);
+      rows.push(`${csvCell(c.name)},${c.quantity},${vc},${cleanVariance(vc, c.quantity, 2)},${csvCell(c.unit)}`);
     });
   }
 
@@ -505,8 +1525,9 @@ export function exportProjectToExcel(project: ConstructionProject) {
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
+  const suffix = scope === 'all' ? 'audit_report' : `${scope}_report`;
   link.setAttribute('href', url);
-  link.setAttribute('download', `${project.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_audit_report.csv`);
+  link.setAttribute('download', `${project.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${suffix}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -514,359 +1535,3 @@ export function exportProjectToExcel(project: ConstructionProject) {
 }
 
 export const exportProjectToCsv = exportProjectToExcel;
-
-export function exportChainLinkPdf(project: ConstructionProject) {
-  const settings = getProjectSettings(project);
-  const { items, customItems } = settings;
-  const m = computeMeasurements(project);
-  const fencingCustom = customItems.filter(c => c.enabled && c.category === 'fencing');
-
-  const w = window.open('', '_blank');
-  if (!w) {
-    window.print();
-    return;
-  }
-
-  const rowsHtml: string[] = [];
-  let rowNum = 1;
-  if (items.anglePosts.enabled) {
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>Angle Posts (Corner / End)</td><td class="muted">Physical count</td><td class="num">${m.totalAngle}</td><td class="center">${escapeHtml(items.anglePosts.unit)}</td></tr>`);
-  }
-  if (items.intermediatePosts.enabled) {
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>Intermediate Posts</td><td class="muted">Physical count</td><td class="num">${m.totalIntermed}</td><td class="center">${escapeHtml(items.intermediatePosts.unit)}</td></tr>`);
-  }
-  if (items.strutPosts.enabled) {
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>Strut Posts</td><td class="muted">Physical count</td><td class="num">${m.totalStrut}</td><td class="center">${escapeHtml(items.strutPosts.unit)}</td></tr>`);
-  }
-  if (items.gatePosts.enabled) {
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>Gate Posts</td><td class="muted">Physical count</td><td class="num">${m.totalGate}</td><td class="center">${escapeHtml(items.gatePosts.unit)}</td></tr>`);
-  }
-  if (items.chainLinkMesh.enabled) {
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>Chain-Link Mesh</td><td class="muted">L: ${m.meshLen} ${escapeHtml(items.chainLinkMesh.unit)} &times; W: ${m.meshWidth} ${escapeHtml(m.lengthUnit)} (Area: ${m.meshArea.toFixed(1)} ${escapeHtml(m.areaUnit)})</td><td class="num">${m.meshLen.toLocaleString()}</td><td class="center">${escapeHtml(items.chainLinkMesh.unit)}</td></tr>`);
-  }
-  if (items.rrmWall.enabled) {
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>RRM Foundation Wall</td><td class="muted">L: ${m.rrmLen.toFixed(2)} ${escapeHtml(m.lengthUnit)} &times; W: ${m.rrmWidth.toFixed(2)} ${escapeHtml(m.lengthUnit)} &times; H: ${m.rrmHeight.toFixed(2)} ${escapeHtml(m.lengthUnit)}</td><td class="num">${m.rrmVol.toFixed(2)}</td><td class="center">${escapeHtml(items.rrmWall.unit)}</td></tr>`);
-  }
-  fencingCustom.forEach(c => {
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>${escapeHtml(c.name)}</td><td class="muted">Custom item</td><td class="num">${c.quantity}</td><td class="center">${escapeHtml(c.unit)}</td></tr>`);
-  });
-
-  w.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Fencing Measurement Report - ${escapeHtml(project.name)}</title>
-        <style>${SHARED_PRINT_CSS}</style>
-      </head>
-      <body>
-        <div class="doc-header">
-          <div>
-            <div class="doc-kicker">Site Measurement Report &bull; Chain-Link &amp; RRM</div>
-            <h1 class="doc-title">${escapeHtml(project.name)}</h1>
-          </div>
-          <div class="doc-meta-right">
-            <div><strong>Date:</strong> ${escapeHtml(new Date().toLocaleDateString())}</div>
-            <div><strong>Units:</strong> ${escapeHtml(settings.unitSystem.toUpperCase())}</div>
-          </div>
-        </div>
-
-        <div class="info-grid">
-          <div class="info-row"><span class="info-label">Client</span><span class="info-val">${escapeHtml(project.clientName || 'N/A')}</span></div>
-          <div class="info-row"><span class="info-label">Site Location</span><span class="info-val">${escapeHtml(project.location || 'N/A')}</span></div>
-        </div>
-
-        <h2>Fencing &amp; Masonry Quantities</h2>
-        <table>
-          <thead>
-            <tr>
-              <th class="center" style="width:36px;">#</th>
-              <th>Work Item</th>
-              <th>Dimensions / Details</th>
-              <th class="num" style="width:95px;">Quantity</th>
-              <th class="center" style="width:65px;">Unit</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml.length > 0 ? rowsHtml.join('') : '<tr><td colspan="5" class="center muted">No fencing items enabled.</td></tr>'}
-          </tbody>
-        </table>
-
-        ${buildMapSectionHtml(project, 'fencing', 'Site Location & Fencing GPS Map')}
-
-        <div class="sig-grid">
-          <div class="sig-box">Prepared By (Site Engineer / Surveyor)</div>
-          <div class="sig-box">Verified By (${escapeHtml(project.auditInfo?.auditorName || 'Technical Auditor')})</div>
-        </div>
-
-        <script>window.onload = () => window.print();</script>
-      </body>
-    </html>
-  `);
-  w.document.close();
-}
-
-export function exportRoadPdf(project: ConstructionProject) {
-  const settings = getProjectSettings(project);
-  const { items, customItems } = settings;
-  const m = computeMeasurements(project);
-  const roadCustom = customItems.filter(c => c.enabled && c.category === 'road');
-
-  const w = window.open('', '_blank');
-  if (!w) {
-    window.print();
-    return;
-  }
-
-  const rowsHtml: string[] = [];
-  let rowNum = 1;
-  if (items.roadMeasurement.enabled) {
-    const chainageText = `Chainage: ${escapeHtml(m.chainageStart)} &ndash; ${escapeHtml(m.chainageEnd)} &bull; `;
-    const dims = m.roadDepth > 0
-      ? `${chainageText}Length: ${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)} &times; Width: ${m.roadWidth} ${escapeHtml(m.lengthUnit)} &times; Depth: ${m.roadDepth} ${escapeHtml(m.lengthUnit)}`
-      : `${chainageText}Length: ${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)} &times; Width: ${m.roadWidth} ${escapeHtml(m.lengthUnit)}`;
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>Road Length</td><td class="muted">${dims}</td><td class="num">${m.roadLen.toLocaleString()}</td><td class="center">${escapeHtml(items.roadMeasurement.unit)}</td></tr>`);
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>Road Surface Area</td><td class="muted">Length &times; Breadth/Width</td><td class="num">${m.roadArea.toLocaleString()}</td><td class="center">${escapeHtml(m.areaUnit)}</td></tr>`);
-    if (m.roadDepth > 0) {
-      rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>Road Volume (with Depth)</td><td class="muted">Length &times; Width &times; Depth</td><td class="num">${m.roadVol.toFixed(1)}</td><td class="center">${escapeHtml(m.volumeUnit)}</td></tr>`);
-    }
-  }
-  if (items.sideDrain.enabled) {
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>Road Side Drain</td><td class="muted">Measured length</td><td class="num">${m.sideDrainLen.toLocaleString()}</td><td class="center">${escapeHtml(items.sideDrain.unit)}</td></tr>`);
-  }
-  roadCustom.forEach(c => {
-    rowsHtml.push(`<tr><td class="center">${rowNum++}</td><td>${escapeHtml(c.name)}</td><td class="muted">Custom item</td><td class="num">${c.quantity}</td><td class="center">${escapeHtml(c.unit)}</td></tr>`);
-  });
-
-  w.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Road Measurement Report - ${escapeHtml(project.name)}</title>
-        <style>${SHARED_PRINT_CSS}</style>
-      </head>
-      <body>
-        <div class="doc-header">
-          <div>
-            <div class="doc-kicker">Site Measurement Report &bull; Road Works</div>
-            <h1 class="doc-title">${escapeHtml(project.name)}</h1>
-          </div>
-          <div class="doc-meta-right">
-            <div><strong>Date:</strong> ${escapeHtml(new Date().toLocaleDateString())}</div>
-            <div><strong>Units:</strong> ${escapeHtml(settings.unitSystem.toUpperCase())}</div>
-          </div>
-        </div>
-
-        <div class="info-grid">
-          <div class="info-row"><span class="info-label">Client</span><span class="info-val">${escapeHtml(project.clientName || 'N/A')}</span></div>
-          <div class="info-row"><span class="info-label">Site Location</span><span class="info-val">${escapeHtml(project.location || 'N/A')}</span></div>
-        </div>
-
-        <h2>Road Quantities</h2>
-        <table>
-          <thead>
-            <tr>
-              <th class="center" style="width:36px;">#</th>
-              <th>Road Component</th>
-              <th>Dimensions / Details</th>
-              <th class="num" style="width:95px;">Quantity</th>
-              <th class="center" style="width:65px;">Unit</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml.length > 0 ? rowsHtml.join('') : '<tr><td colspan="5" class="center muted">No road items enabled.</td></tr>'}
-          </tbody>
-        </table>
-
-        ${buildMapSectionHtml(project, 'road', 'Road Alignment & Site GPS Map')}
-
-        <div class="sig-grid">
-          <div class="sig-box">Prepared By (Site Engineer / Surveyor)</div>
-          <div class="sig-box">Verified By (${escapeHtml(project.auditInfo?.auditorName || 'Technical Auditor')})</div>
-        </div>
-
-        <script>window.onload = () => window.print();</script>
-      </body>
-    </html>
-  `);
-  w.document.close();
-}
-
-export function exportProjectToPdf(project: ConstructionProject) {
-  const settings = getProjectSettings(project);
-  const { items, customItems } = settings;
-  const enabledCustom = customItems.filter(c => c.enabled);
-  const m = computeMeasurements(project);
-
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    window.print();
-    return;
-  }
-
-  // Build Measurement Rows
-  const measurementRows: string[] = [];
-  let rowNum = 1;
-
-  if (items.anglePosts.enabled) {
-    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Angle Posts (Corner / End)</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalAngle}</td><td class="center">${escapeHtml(items.anglePosts.unit)}</td></tr>`);
-  }
-  if (items.intermediatePosts.enabled) {
-    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Intermediate Posts</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalIntermed}</td><td class="center">${escapeHtml(items.intermediatePosts.unit)}</td></tr>`);
-  }
-  if (items.strutPosts.enabled) {
-    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Strut Posts</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalStrut}</td><td class="center">${escapeHtml(items.strutPosts.unit)}</td></tr>`);
-  }
-  if (items.gatePosts.enabled) {
-    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Gate Posts</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalGate}</td><td class="center">${escapeHtml(items.gatePosts.unit)}</td></tr>`);
-  }
-  if (items.chainLinkMesh.enabled) {
-    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Chain-Link Mesh</td><td class="muted">L: ${m.meshLen} ${escapeHtml(items.chainLinkMesh.unit)} &times; W: ${m.meshWidth} ${escapeHtml(m.lengthUnit)} (Area: ${m.meshArea.toFixed(1)} ${escapeHtml(m.areaUnit)})</td><td class="num">${m.meshLen.toLocaleString()}</td><td class="center">${escapeHtml(items.chainLinkMesh.unit)}</td></tr>`);
-  }
-  if (items.rrmWall.enabled) {
-    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>RRM Foundation Wall</td><td class="muted">L: ${m.rrmLen.toFixed(2)} ${escapeHtml(m.lengthUnit)} &times; W: ${m.rrmWidth.toFixed(2)} ${escapeHtml(m.lengthUnit)} &times; H: ${m.rrmHeight.toFixed(2)} ${escapeHtml(m.lengthUnit)}</td><td class="num">${m.rrmVol.toFixed(2)}</td><td class="center">${escapeHtml(items.rrmWall.unit)}</td></tr>`);
-  }
-  if (items.roadMeasurement.enabled) {
-    const chainageText = `Ch. ${escapeHtml(m.chainageStart)} &ndash; ${escapeHtml(m.chainageEnd)} &bull; `;
-    const roadDetails = m.roadDepth > 0
-      ? `${chainageText}L: ${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)} &times; W: ${m.roadWidth} ${escapeHtml(m.lengthUnit)} &times; D: ${m.roadDepth} ${escapeHtml(m.lengthUnit)} &bull; Area: ${m.roadArea.toLocaleString()} ${escapeHtml(m.areaUnit)} &bull; Vol: ${m.roadVol.toFixed(1)} ${escapeHtml(m.volumeUnit)}`
-      : `${chainageText}L: ${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)} &times; W: ${m.roadWidth} ${escapeHtml(m.lengthUnit)} &bull; Area: ${m.roadArea.toLocaleString()} ${escapeHtml(m.areaUnit)}`;
-    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Road Alignment</td><td class="muted">${roadDetails}</td><td class="num">${m.roadLen.toLocaleString()}</td><td class="center">${escapeHtml(items.roadMeasurement.unit)}</td></tr>`);
-  }
-  if (items.sideDrain.enabled) {
-    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Road Side Drain</td><td class="muted">Road &bull; Measured length</td><td class="num">${m.sideDrainLen.toLocaleString()}</td><td class="center">${escapeHtml(items.sideDrain.unit)}</td></tr>`);
-  }
-  enabledCustom.forEach(c => {
-    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>${escapeHtml(c.name)}</td><td class="muted">${escapeHtml(c.category)} &bull; Custom item</td><td class="num">${c.quantity}</td><td class="center">${escapeHtml(c.unit)}</td></tr>`);
-  });
-
-  // Build Audit Reconciliation Rows
-  const auditRows: string[] = [];
-  if (project.auditInfo) {
-    const a = project.auditInfo;
-    const anyPosts = items.anglePosts.enabled || items.intermediatePosts.enabled || items.strutPosts.enabled || items.gatePosts.enabled;
-    if (anyPosts) {
-      const vp = a.verifiedPostCount ?? m.totalPosts;
-      const diff = vp - m.totalPosts;
-      auditRows.push(`<tr><td>Fence Posts Total</td><td class="num">${m.totalPosts} ${escapeHtml(m.postUnit)}</td><td class="num">${vp} ${escapeHtml(m.postUnit)}</td><td class="num">${diff > 0 ? `+${diff}` : diff} ${escapeHtml(m.postUnit)}</td></tr>`);
-    }
-    if (items.chainLinkMesh.enabled) {
-      const vm = a.verifiedMeshLength ?? m.meshLen;
-      const diff = vm - m.meshLen;
-      auditRows.push(`<tr><td>Chain-Link Mesh Length</td><td class="num">${m.meshLen} ${escapeHtml(items.chainLinkMesh.unit)}</td><td class="num">${vm} ${escapeHtml(items.chainLinkMesh.unit)}</td><td class="num">${diff > 0 ? `+${diff}` : diff} ${escapeHtml(items.chainLinkMesh.unit)}</td></tr>`);
-    }
-    if (items.rrmWall.enabled) {
-      const vr = a.verifiedRrmVolume ?? Number(m.rrmVol.toFixed(2));
-      const diff = vr - m.rrmVol;
-      auditRows.push(`<tr><td>RRM Wall Volume</td><td class="num">${m.rrmVol.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td><td class="num">${vr.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td><td class="num">${diff > 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td></tr>`);
-    }
-    if (items.roadMeasurement.enabled) {
-      const vrd = a.verifiedRoadLength ?? m.roadLen;
-      const diff = vrd - m.roadLen;
-      auditRows.push(`<tr><td>Road Length</td><td class="num">${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)}</td><td class="num">${vrd} ${escapeHtml(items.roadMeasurement.unit)}</td><td class="num">${diff > 0 ? `+${diff}` : diff} ${escapeHtml(items.roadMeasurement.unit)}</td></tr>`);
-    }
-    if (items.sideDrain.enabled) {
-      const vsd = a.verifiedSideDrainLength ?? m.sideDrainLen;
-      const diff = vsd - m.sideDrainLen;
-      auditRows.push(`<tr><td>Road Side Drain</td><td class="num">${m.sideDrainLen} ${escapeHtml(items.sideDrain.unit)}</td><td class="num">${vsd} ${escapeHtml(items.sideDrain.unit)}</td><td class="num">${diff > 0 ? `+${diff}` : diff} ${escapeHtml(items.sideDrain.unit)}</td></tr>`);
-    }
-    enabledCustom.forEach(c => {
-      const vc = a.verifiedCustomItems?.[c.id] ?? c.quantity;
-      const diff = vc - c.quantity;
-      auditRows.push(`<tr><td>${escapeHtml(c.name)}</td><td class="num">${c.quantity} ${escapeHtml(c.unit)}</td><td class="num">${vc} ${escapeHtml(c.unit)}</td><td class="num">${diff > 0 ? `+${diff}` : diff} ${escapeHtml(c.unit)}</td></tr>`);
-    });
-  }
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Site Measurement &amp; Audit Report - ${escapeHtml(project.name)}</title>
-        <style>${SHARED_PRINT_CSS}</style>
-      </head>
-      <body>
-        <div class="doc-header">
-          <div>
-            <div class="doc-kicker">Site Measurement &amp; Technical Audit Report</div>
-            <h1 class="doc-title">${escapeHtml(project.name)}</h1>
-          </div>
-          <div class="doc-meta-right">
-            <div><strong>Date:</strong> ${escapeHtml(new Date().toLocaleDateString())}</div>
-            <div><strong>Unit System:</strong> ${escapeHtml(settings.unitSystem.toUpperCase())}</div>
-          </div>
-        </div>
-
-        <div class="info-grid">
-          <div class="info-row"><span class="info-label">Client</span><span class="info-val">${escapeHtml(project.clientName || 'N/A')}</span></div>
-          <div class="info-row"><span class="info-label">Location</span><span class="info-val">${escapeHtml(project.location || 'N/A')}</span></div>
-          <div class="info-row"><span class="info-label">Auditor</span><span class="info-val">${escapeHtml(project.auditInfo?.auditorName || 'Pending Assignment')}</span></div>
-          <div class="info-row"><span class="info-label">Audit Status</span><span class="info-val"><span class="badge">${escapeHtml(formatAuditStatus(project.auditInfo?.auditStatus))}</span></span></div>
-        </div>
-
-        <h2>1. Physical Measurement Summary</h2>
-        <table>
-          <thead>
-            <tr>
-              <th class="center" style="width:36px;">#</th>
-              <th>Work Item</th>
-              <th>Dimensions / Specification</th>
-              <th class="num" style="width:95px;">Quantity</th>
-              <th class="center" style="width:65px;">Unit</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${measurementRows.length > 0 ? measurementRows.join('') : '<tr><td colspan="5" class="center muted">No measurement items enabled.</td></tr>'}
-          </tbody>
-        </table>
-
-        ${project.auditNotes?.trim() ? `
-          <div class="remarks-box">
-            <strong>Site Audit Notes:</strong>
-            ${escapeHtml(project.auditNotes.trim())}
-          </div>
-        ` : ''}
-
-        ${buildMapSectionHtml(project, 'all', '2. Site Location & Geospatial Map')}
-
-        ${project.auditInfo ? `
-          <h2>3. Auditor Verification &amp; Reconciliation</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th class="num">Logged</th>
-                <th class="num">Verified</th>
-                <th class="num">Variance</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${auditRows.join('')}
-            </tbody>
-          </table>
-          <div class="remarks-box">
-            <strong>Auditor Remarks (${escapeHtml(project.auditInfo.auditDate)}):</strong>
-            ${escapeHtml(project.auditInfo.generalRemarks || 'No remarks recorded.')}
-          </div>
-        ` : ''}
-
-        <div class="sig-grid">
-          <div class="sig-box">Prepared By (Site Engineer / Surveyor)</div>
-          <div class="sig-box">Verified By (${escapeHtml(project.auditInfo?.auditorName || 'Technical Auditor')})</div>
-        </div>
-
-        <div class="footer">
-          <span>SitePro Measurement &amp; Audit Record</span>
-          <span>Generated ${escapeHtml(new Date().toLocaleDateString())}</span>
-        </div>
-
-        <script>
-          window.onload = function() {
-            window.print();
-          };
-        </script>
-      </body>
-    </html>
-  `;
-
-  printWindow.document.write(html);
-  printWindow.document.close();
-}

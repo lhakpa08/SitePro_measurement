@@ -9,6 +9,15 @@ export interface GpsCoordinate {
   timestamp?: number;
 }
 
+export interface InputLocationPoint {
+  id: string;
+  fieldKey: string;
+  fieldLabel: string;
+  valueSummary?: string;
+  gps: GpsCoordinate;
+  capturedAt: number;
+}
+
 export interface FencePostEntry {
   id: string;
   postNumber: number;
@@ -27,6 +36,7 @@ export interface FenceMeshSegment {
   meshGauge: string;
   barbedWireStrands: number;
   hasTensionWire: boolean;
+  gps?: GpsCoordinate;
   notes?: string;
   createdAt: number;
 }
@@ -41,6 +51,7 @@ export interface RrmWallSegment {
   topWidthEntries?: number[];
   bottomWidthMeters: number;
   bottomWidthEntries?: number[];
+  gps?: GpsCoordinate;
   notes?: string;
   createdAt: number;
 }
@@ -63,6 +74,7 @@ export interface RoadSectionEntry {
   earthworkCutDepthMeters: number; // Excavation depth
   depthEntries?: number[];
   sideDrainLengthMeters: number;
+  gps?: GpsCoordinate;
   startGps?: GpsCoordinate;
   endGps?: GpsCoordinate;
   notes?: string;
@@ -78,6 +90,7 @@ export interface CustomAuditItem {
   verifiedQuantity?: number;
   quickSteps: number[];
   enabled: boolean;
+  gps?: GpsCoordinate;
 }
 
 export interface StandardItemConfig {
@@ -119,6 +132,7 @@ export interface ConstructionProject {
   rrmWalls: RrmWallSegment[];
   roadSections: RoadSectionEntry[];
   siteCoordinates?: GpsCoordinate & { label?: string; source?: 'gps' | 'search' | 'pin' };
+  inputLocations?: InputLocationPoint[];
   settings?: ProjectSettings;
   auditNotes?: string;
   auditInfo?: {

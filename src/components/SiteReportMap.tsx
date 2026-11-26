@@ -15,6 +15,7 @@ import {
   getGoogleMapsApiKey,
   getProjectMapData,
   ReportMapType,
+  StaticMapScope,
 } from '../utils/staticMap';
 import { getProjectSettings, formatChainage, parseChainage } from '../utils/geo';
 import {
@@ -37,6 +38,8 @@ interface SiteReportMapProps {
   project: ConstructionProject;
   currentGps?: { lat: number; lng: number; accuracy?: number };
   onUpdateProject: (updated: ConstructionProject) => void;
+  scope?: StaticMapScope;
+  readOnly?: boolean;
 }
 
 type PinMode = 'browse' | 'site' | 'road_start' | 'road_end';
@@ -426,6 +429,8 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
   project,
   currentGps,
   onUpdateProject,
+  scope = 'all',
+  readOnly = false,
 }) => {
   const apiKey = getGoogleMapsApiKey();
   const settings = getProjectSettings(project);
@@ -446,8 +451,9 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
   // Polyline visualization toggles
   const [showRoadPolyline, setShowRoadPolyline] = useState<boolean>(true);
   const [showFencePolyline, setShowFencePolyline] = useState<boolean>(true);
+  const [showInputPins, setShowInputPins] = useState<boolean>(true);
 
-  const mapData = useMemo(() => getProjectMapData(project, 'all'), [project]);
+  const mapData = useMemo(() => getProjectMapData(project, scope), [project, scope]);
   const roadSection = project.roadSections[0];
 
   const initialCamera = useMemo(() => {
@@ -558,6 +564,11 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
       lengthMeters: measuredDisplayValue,
       chainageEnd: formatChainage(startNum + measuredDisplayValue),
     };
+    if (baseSections.length > 1) {
+      for (let i = 1; i < baseSections.length; i++) {
+        baseSections[i] = { ...baseSections[i], lengthMeters: 0 };
+      }
+    }
     onUpdateProject({
       ...project,
       roadSections: baseSections,
@@ -588,6 +599,11 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
       ...baseSegments[0],
       lengthMeters: measuredDisplayValue,
     };
+    if (baseSegments.length > 1) {
+      for (let i = 1; i < baseSegments.length; i++) {
+        baseSegments[i] = { ...baseSegments[i], lengthMeters: 0 };
+      }
+    }
     onUpdateProject({
       ...project,
       fenceMeshSegments: baseSegments,
@@ -646,6 +662,7 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
     <APIProvider apiKey={apiKey} libraries={['marker', 'places']}>
       <div className="space-y-3">
         {/* Controls Toolbar */}
+        {!readOnly && (
         <div className="flex flex-col lg:flex-row lg:items-center gap-2.5">
           <PlaceSearchBar
             onSelectPlace={(coords, label) => {
@@ -758,6 +775,7 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
             )}
           </div>
         </div>
+        )}
 
         {/* Distance Measurement Active Floating Card */}
         {isMeasuring && (
@@ -882,6 +900,18 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
               >
                 {showFencePolyline ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
                 <span>Fence Path</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowInputPins(!showInputPins)}
+                className={`px-2.5 py-1.5 rounded-lg font-semibold inline-flex items-center gap-1 transition ${
+                  showInputPins ? 'bg-violet-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Toggle Input-Captured Location Pins"
+              >
+                {showInputPins ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                <span>Input Pins ({mapData.inputLocations.length})</span>
               </button>
             </div>
           </div>
@@ -1023,6 +1053,23 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
               );
             })}
 
+            {/* Captured Input Location Pins */}
+            {showInputPins &&
+              mapData.inputLocations.map((loc, idx) => (
+                <InteractivePinMarker
+                  key={loc.id}
+                  id={loc.id}
+                  position={loc.gps}
+                  title={`Input: ${loc.fieldLabel}`}
+                  subtitle={`${loc.valueSummary ? `${loc.valueSummary} · ` : ''}Captured ${new Date(loc.capturedAt).toLocaleTimeString()}`}
+                  pinBg="#7c3aed"
+                  pinBorder="#5b21b6"
+                  pinGlyphColor="#ffffff"
+                  glyphText={String(idx + 1)}
+                  onOpenInfo={setActiveInfo}
+                />
+              ))}
+
             {/* Current Surveyor Live GPS Indicator */}
             {currentGps && (
               <AdvancedMarker
@@ -1060,7 +1107,7 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
         </div>
 
         {/* Coordinate Summary Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="text-slate-500 font-medium">Site Anchor (S)</div>
@@ -1070,7 +1117,7 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
                   : 'Not pinned yet'}
               </div>
             </div>
-            {mapData.sitePin && (
+            {!readOnly && mapData.sitePin && (
               <button
                 type="button"
                 onClick={() =>
@@ -1094,10 +1141,32 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
           </div>
 
           <div className="min-w-0">
-            <div className="text-slate-500 font-medium">Fence Posts Polyline Sequence</div>
+            <div className="text-slate-500 font-medium">Fence Posts Polyline</div>
             <div className="font-semibold text-slate-900 tabular-nums mt-0.5">
-              {mapData.gpsPosts.length} posts connected in sequence
+              {mapData.gpsPosts.length} posts connected
             </div>
+          </div>
+
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-slate-500 font-medium">Input Locations Captured</div>
+              <div className="font-semibold text-violet-700 tabular-nums mt-0.5">
+                {mapData.inputLocations.length} GPS pin{mapData.inputLocations.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            {!readOnly && mapData.inputLocations.length > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateProject({ ...project, inputLocations: [], updatedAt: Date.now() })
+                }
+                aria-label="Clear captured input locations"
+                title="Clear captured input locations"
+                className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg transition shrink-0"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>

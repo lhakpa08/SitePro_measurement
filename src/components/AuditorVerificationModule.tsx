@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ConstructionProject } from '../types';
 import { getProjectSettings } from '../utils/geo';
+import { cleanVariance, computeMeasurements, formatVariance, roundTo } from '../utils/calculations';
 import { 
   ShieldCheck, 
   CheckCircle2, 
@@ -26,6 +27,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
   const settings = getProjectSettings(project);
   const { items, customItems } = settings;
   const enabledCustom = customItems.filter(c => c.enabled);
+  const m = computeMeasurements(project);
 
   const anyPostsEnabled =
     items.anglePosts.enabled ||
@@ -33,22 +35,14 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
     items.strutPosts.enabled ||
     items.gatePosts.enabled;
 
-  const postUnit = items.anglePosts.unit || items.intermediatePosts.unit || 'pcs';
+  const postUnit = m.postUnit;
 
-  const plannedPosts = project.fencePosts.filter(p => {
-    if (p.postType === 'angle_post') return items.anglePosts.enabled;
-    if (p.postType === 'intermediate_post') return items.intermediatePosts.enabled;
-    if (p.postType === 'strut_post') return items.strutPosts.enabled;
-    if (p.postType === 'gate_post') return items.gatePosts.enabled;
-    return true;
-  }).length;
-  const plannedMesh = project.fenceMeshSegments.reduce((a, c) => a + c.lengthMeters, 0);
-  const plannedRrm = project.rrmWalls.reduce((acc, c) => {
-    const avgW = (c.topWidthMeters + c.bottomWidthMeters) / 2;
-    return acc + (c.lengthMeters * c.heightMeters * avgW);
-  }, 0);
-  const plannedRoad = project.roadSections.reduce((a, c) => a + c.lengthMeters, 0);
-  const plannedSideDrain = project.roadSections.reduce((a, c) => a + (c.sideDrainLengthMeters || 0), 0);
+  const plannedPosts = m.totalPosts;
+  const plannedMesh = m.meshLen;
+  const plannedRrm = m.rrmVol;
+  const plannedRrmRounded = roundTo(plannedRrm, 2);
+  const plannedRoad = m.roadLen;
+  const plannedSideDrain = m.sideDrainLen;
 
   const audit = project.auditInfo || {
     auditorName: '',
@@ -57,7 +51,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
     generalRemarks: '',
     verifiedPostCount: plannedPosts,
     verifiedMeshLength: plannedMesh,
-    verifiedRrmVolume: Number(plannedRrm.toFixed(1)),
+    verifiedRrmVolume: plannedRrmRounded,
     verifiedRoadLength: plannedRoad,
     verifiedSideDrainLength: plannedSideDrain,
     verifiedCustomItems: {},
@@ -70,7 +64,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
   
   const [verifiedPosts, setVerifiedPosts] = useState<number>(audit.verifiedPostCount ?? plannedPosts);
   const [verifiedMesh, setVerifiedMesh] = useState<number>(audit.verifiedMeshLength ?? plannedMesh);
-  const [verifiedRrm, setVerifiedRrm] = useState<number>(audit.verifiedRrmVolume ?? Number(plannedRrm.toFixed(1)));
+  const [verifiedRrm, setVerifiedRrm] = useState<number>(audit.verifiedRrmVolume ?? plannedRrmRounded);
   const [verifiedRoad, setVerifiedRoad] = useState<number>(audit.verifiedRoadLength ?? plannedRoad);
   const [verifiedSideDrain, setVerifiedSideDrain] = useState<number>(audit.verifiedSideDrainLength ?? plannedSideDrain);
   const [verifiedCustom, setVerifiedCustom] = useState<Record<string, number>>(() => {
@@ -96,7 +90,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
       setGeneralRemarks(currentAudit.generalRemarks || '');
       setVerifiedPosts(currentAudit.verifiedPostCount ?? plannedPosts);
       setVerifiedMesh(currentAudit.verifiedMeshLength ?? plannedMesh);
-      setVerifiedRrm(currentAudit.verifiedRrmVolume ?? Number(plannedRrm.toFixed(1)));
+      setVerifiedRrm(currentAudit.verifiedRrmVolume ?? plannedRrmRounded);
       setVerifiedRoad(currentAudit.verifiedRoadLength ?? plannedRoad);
       setVerifiedSideDrain(currentAudit.verifiedSideDrainLength ?? plannedSideDrain);
       const nextCustom: Record<string, number> = {};
@@ -111,7 +105,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
       setGeneralRemarks('');
       setVerifiedPosts(plannedPosts);
       setVerifiedMesh(plannedMesh);
-      setVerifiedRrm(Number(plannedRrm.toFixed(1)));
+      setVerifiedRrm(plannedRrmRounded);
       setVerifiedRoad(plannedRoad);
       setVerifiedSideDrain(plannedSideDrain);
       const nextCustom: Record<string, number> = {};
@@ -122,17 +116,17 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
     }
   }, [project.id]);
 
-  // Variances
-  const postVariance = verifiedPosts - plannedPosts;
-  const meshVariance = verifiedMesh - plannedMesh;
-  const rrmVariance = verifiedRrm - plannedRrm;
-  const roadVariance = verifiedRoad - plannedRoad;
-  const sideDrainVariance = verifiedSideDrain - plannedSideDrain;
+  // Variances (rounded cleanly to prevent floating-point drift)
+  const postVariance = cleanVariance(verifiedPosts, plannedPosts, 0);
+  const meshVariance = cleanVariance(verifiedMesh, plannedMesh, 2);
+  const rrmVariance = cleanVariance(verifiedRrm, plannedRrmRounded, 2);
+  const roadVariance = cleanVariance(verifiedRoad, plannedRoad, 2);
+  const sideDrainVariance = cleanVariance(verifiedSideDrain, plannedSideDrain, 2);
 
   const handleSyncFromLogged = () => {
     setVerifiedPosts(plannedPosts);
     setVerifiedMesh(plannedMesh);
-    setVerifiedRrm(Number(plannedRrm.toFixed(1)));
+    setVerifiedRrm(plannedRrmRounded);
     setVerifiedRoad(plannedRoad);
     setVerifiedSideDrain(plannedSideDrain);
     const nextCustom: Record<string, number> = {};
@@ -314,7 +308,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                   <input
                     type="number"
                     inputMode="decimal"
-                    step="0.1"
+                    step="0.01"
                     value={verifiedRrm}
                     onChange={(e) => setVerifiedRrm(parseFloat(e.target.value) || 0)}
                     className={`${inputClass} font-bold text-indigo-700`}
@@ -468,7 +462,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       logged: `${plannedPosts} ${postUnit}`,
                       verified: `${verifiedPosts} ${postUnit}`,
                       diff: postVariance,
-                      diffLabel: `${postVariance > 0 ? `+${postVariance}` : postVariance} ${postUnit}`,
+                      diffLabel: `${formatVariance(postVariance, 0)} ${postUnit}`,
                     }] : []),
                     ...(items.chainLinkMesh.enabled ? [{
                       key: 'mesh',
@@ -476,15 +470,15 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       logged: `${plannedMesh} ${items.chainLinkMesh.unit}`,
                       verified: `${verifiedMesh} ${items.chainLinkMesh.unit}`,
                       diff: meshVariance,
-                      diffLabel: `${meshVariance > 0 ? `+${meshVariance}` : meshVariance} ${items.chainLinkMesh.unit}`,
+                      diffLabel: `${formatVariance(meshVariance, 2)} ${items.chainLinkMesh.unit}`,
                     }] : []),
                     ...(items.rrmWall.enabled ? [{
                       key: 'rrm',
                       label: 'RRM Wall Masonry Volume',
-                      logged: `${plannedRrm.toFixed(1)} ${items.rrmWall.unit}`,
-                      verified: `${verifiedRrm.toFixed(1)} ${items.rrmWall.unit}`,
+                      logged: `${plannedRrm.toFixed(2)} ${items.rrmWall.unit}`,
+                      verified: `${verifiedRrm.toFixed(2)} ${items.rrmWall.unit}`,
                       diff: rrmVariance,
-                      diffLabel: `${rrmVariance > 0 ? `+${rrmVariance.toFixed(1)}` : rrmVariance.toFixed(1)} ${items.rrmWall.unit}`,
+                      diffLabel: `${rrmVariance > 0 ? `+${rrmVariance.toFixed(2)}` : rrmVariance.toFixed(2)} ${items.rrmWall.unit}`,
                     }] : []),
                     ...(items.roadMeasurement.enabled ? [{
                       key: 'road',
@@ -492,7 +486,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       logged: `${plannedRoad} ${items.roadMeasurement.unit}`,
                       verified: `${verifiedRoad} ${items.roadMeasurement.unit}`,
                       diff: roadVariance,
-                      diffLabel: `${roadVariance > 0 ? `+${roadVariance}` : roadVariance} ${items.roadMeasurement.unit}`,
+                      diffLabel: `${formatVariance(roadVariance, 2)} ${items.roadMeasurement.unit}`,
                     }] : []),
                     ...(items.sideDrain.enabled ? [{
                       key: 'drain',
@@ -500,18 +494,18 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       logged: `${plannedSideDrain} ${items.sideDrain.unit}`,
                       verified: `${verifiedSideDrain} ${items.sideDrain.unit}`,
                       diff: sideDrainVariance,
-                      diffLabel: `${sideDrainVariance > 0 ? `+${sideDrainVariance}` : sideDrainVariance} ${items.sideDrain.unit}`,
+                      diffLabel: `${formatVariance(sideDrainVariance, 2)} ${items.sideDrain.unit}`,
                     }] : []),
                     ...enabledCustom.map((c) => {
                       const vVal = verifiedCustom[c.id] ?? c.quantity;
-                      const diff = vVal - c.quantity;
+                      const diff = cleanVariance(vVal, c.quantity, 2);
                       return {
                         key: c.id,
                         label: c.name,
                         logged: `${c.quantity} ${c.unit}`,
                         verified: `${vVal} ${c.unit}`,
                         diff,
-                        diffLabel: `${diff > 0 ? `+${diff}` : diff} ${c.unit}`,
+                        diffLabel: `${formatVariance(diff, 2)} ${c.unit}`,
                       };
                     }),
                   ].map((row) => (
@@ -555,7 +549,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                           <td className="py-3 px-3 text-right text-slate-600">{plannedPosts} {postUnit}</td>
                           <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedPosts} {postUnit}</td>
                           <td className={`py-3 pl-3 text-right font-bold ${postVariance < 0 ? 'text-red-600' : postVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
-                            {postVariance > 0 ? `+${postVariance}` : postVariance} {postUnit}
+                            {formatVariance(postVariance, 0)} {postUnit}
                           </td>
                         </tr>
                       )}
@@ -565,17 +559,17 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                           <td className="py-3 px-3 text-right text-slate-600">{plannedMesh} {items.chainLinkMesh.unit}</td>
                           <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedMesh} {items.chainLinkMesh.unit}</td>
                           <td className={`py-3 pl-3 text-right font-bold ${meshVariance < 0 ? 'text-red-600' : meshVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
-                            {meshVariance > 0 ? `+${meshVariance}` : meshVariance} {items.chainLinkMesh.unit}
+                            {formatVariance(meshVariance, 2)} {items.chainLinkMesh.unit}
                           </td>
                         </tr>
                       )}
                       {items.rrmWall.enabled && (
                         <tr className="hover:bg-slate-50/70 transition">
                           <td className="py-3 pr-4 font-semibold text-slate-900">RRM Wall Masonry Volume</td>
-                          <td className="py-3 px-3 text-right text-slate-600">{plannedRrm.toFixed(1)} {items.rrmWall.unit}</td>
-                          <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedRrm.toFixed(1)} {items.rrmWall.unit}</td>
+                          <td className="py-3 px-3 text-right text-slate-600">{plannedRrm.toFixed(2)} {items.rrmWall.unit}</td>
+                          <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedRrm.toFixed(2)} {items.rrmWall.unit}</td>
                           <td className={`py-3 pl-3 text-right font-bold ${rrmVariance < 0 ? 'text-red-600' : rrmVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
-                            {rrmVariance > 0 ? `+${rrmVariance.toFixed(1)}` : rrmVariance.toFixed(1)} {items.rrmWall.unit}
+                            {rrmVariance > 0 ? `+${rrmVariance.toFixed(2)}` : rrmVariance.toFixed(2)} {items.rrmWall.unit}
                           </td>
                         </tr>
                       )}
@@ -585,7 +579,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                           <td className="py-3 px-3 text-right text-slate-600">{plannedRoad} {items.roadMeasurement.unit}</td>
                           <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedRoad} {items.roadMeasurement.unit}</td>
                           <td className={`py-3 pl-3 text-right font-bold ${roadVariance < 0 ? 'text-red-600' : roadVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
-                            {roadVariance > 0 ? `+${roadVariance}` : roadVariance} {items.roadMeasurement.unit}
+                            {formatVariance(roadVariance, 2)} {items.roadMeasurement.unit}
                           </td>
                         </tr>
                       )}
@@ -595,20 +589,20 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                           <td className="py-3 px-3 text-right text-slate-600">{plannedSideDrain} {items.sideDrain.unit}</td>
                           <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedSideDrain} {items.sideDrain.unit}</td>
                           <td className={`py-3 pl-3 text-right font-bold ${sideDrainVariance < 0 ? 'text-red-600' : sideDrainVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
-                            {sideDrainVariance > 0 ? `+${sideDrainVariance}` : sideDrainVariance} {items.sideDrain.unit}
+                            {formatVariance(sideDrainVariance, 2)} {items.sideDrain.unit}
                           </td>
                         </tr>
                       )}
                       {enabledCustom.map((c) => {
                         const vVal = verifiedCustom[c.id] ?? c.quantity;
-                        const diff = vVal - c.quantity;
+                        const diff = cleanVariance(vVal, c.quantity, 2);
                         return (
                           <tr key={c.id} className="hover:bg-slate-50/70 transition">
                             <td className="py-3 pr-4 font-semibold text-slate-900">{c.name}</td>
                             <td className="py-3 px-3 text-right text-slate-600">{c.quantity} {c.unit}</td>
                             <td className="py-3 px-3 text-right font-bold text-indigo-700">{vVal} {c.unit}</td>
                             <td className={`py-3 pl-3 text-right font-bold ${diff < 0 ? 'text-red-600' : diff > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
-                              {diff > 0 ? `+${diff}` : diff} {c.unit}
+                              {formatVariance(diff, 2)} {c.unit}
                             </td>
                           </tr>
                         );

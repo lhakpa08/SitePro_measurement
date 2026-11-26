@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { ConstructionProject, PostType } from '../types';
-import { getProjectSettings, formatChainage, parseChainage } from '../utils/geo';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ConstructionProject, GpsCoordinate, InputLocationPoint, PostType } from '../types';
+import { getProjectSettings, formatChainage, parseChainage, calculateDistanceMeters } from '../utils/geo';
+import { computeMeasurements, roundTo } from '../utils/calculations';
+import { StaticMapScope } from '../utils/staticMap';
 import { 
   Plus, 
   Minus, 
@@ -14,27 +16,35 @@ import {
   Save,
   FileText,
   MapPin,
-  X
+  X,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { exportProjectToExcel, exportProjectToPdf } from '../utils/export';
 
 interface SimpleAuditDashboardProps {
   project: ConstructionProject;
   onUpdateProject: (updated: ConstructionProject) => void;
+  onPatchProject?: (projectId: string, updater: (latest: ConstructionProject) => ConstructionProject) => void;
   savedProjects: ConstructionProject[];
   onSwitchProject: (p: ConstructionProject) => void;
   onOpenSiteManager: () => void;
   onOpenSettings: () => void;
+  onOpenReport?: (scope?: StaticMapScope) => void;
+  onCaptureGps?: () => Promise<GpsCoordinate | undefined>;
   currentGps?: { lat: number; lng: number; accuracy?: number };
 }
 
 export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   project,
   onUpdateProject,
+  onPatchProject,
   savedProjects,
   onSwitchProject,
   onOpenSiteManager,
   onOpenSettings,
+  onOpenReport,
+  onCaptureGps,
   currentGps,
 }) => {
   const settings = getProjectSettings(project);
@@ -42,25 +52,92 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   const enabledCustomItems = customItems.filter(c => c.enabled);
 
   const [bulkAngleQty, setBulkAngleQty] = useState<string>('10');
-  const [collapsedFields, setCollapsedFields] = useState<Record<string, boolean>>({});
+  const [collapsedFields, setCollapsedFields] = useState<Record<string, boolean>>({ toolbar: false });
+  const [fullscreenCardId, setFullscreenCardId] = useState<string | null>(null);
   const [auditNotesDraft, setAuditNotesDraft] = useState<string>(project.auditNotes ?? '');
 
+  const rrmSec = project.rrmWalls[0];
+  const roadSec = project.roadSections[0];
+
+  const [roadWidthText, setRoadWidthText] = useState(roadSec?.widthEntries?.join(', ') ?? (roadSec?.widthMeters !== undefined ? String(roadSec.widthMeters) : ''));
+  const [roadDepthText, setRoadDepthText] = useState(roadSec?.depthEntries?.join(', ') ?? (roadSec?.earthworkCutDepthMeters !== undefined ? String(roadSec.earthworkCutDepthMeters) : ''));
+  const [rrmWidthText, setRrmWidthText] = useState(rrmSec?.topWidthEntries?.join(', ') ?? (rrmSec?.topWidthMeters !== undefined ? String(rrmSec.topWidthMeters) : ''));
+  const [rrmHeightText, setRrmHeightText] = useState(rrmSec?.heightEntries?.join(', ') ?? (rrmSec?.heightMeters !== undefined ? String(rrmSec.heightMeters) : ''));
+
   useEffect(() => {
+    const rrm = project.rrmWalls[0];
+    const road = project.roadSections[0];
+    setRoadWidthText(road?.widthEntries?.join(', ') ?? (road?.widthMeters !== undefined ? String(road.widthMeters) : ''));
+    setRoadDepthText(road?.depthEntries?.join(', ') ?? (road?.earthworkCutDepthMeters !== undefined ? String(road.earthworkCutDepthMeters) : ''));
+    setRrmWidthText(rrm?.topWidthEntries?.join(', ') ?? (rrm?.topWidthMeters !== undefined ? String(rrm.topWidthMeters) : ''));
+    setRrmHeightText(rrm?.heightEntries?.join(', ') ?? (rrm?.heightMeters !== undefined ? String(rrm.heightMeters) : ''));
+    setFullscreenCardId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
+
+  const draftProjectRef = useRef(project);
+  if (draftProjectRef.current.id === project.id) {
+    draftProjectRef.current = project;
+  }
+  const auditNotesDraftRef = useRef(auditNotesDraft);
+  auditNotesDraftRef.current = auditNotesDraft;
+  const onPatchProjectRef = useRef(onPatchProject);
+  onPatchProjectRef.current = onPatchProject;
+  const onUpdateProjectRef = useRef(onUpdateProject);
+  onUpdateProjectRef.current = onUpdateProject;
+
+  const flushAuditNotes = useCallback(() => {
+    const targetProject = draftProjectRef.current;
+    const draft = auditNotesDraftRef.current;
+    if (draft === (targetProject.auditNotes ?? '')) return;
+
+    if (onPatchProjectRef.current) {
+      onPatchProjectRef.current(targetProject.id, (latest) => ({
+        ...latest,
+        auditNotes: draft,
+        updatedAt: Date.now(),
+      }));
+    } else {
+      onUpdateProjectRef.current({
+        ...targetProject,
+        auditNotes: draft,
+        updatedAt: Date.now(),
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (draftProjectRef.current.id !== project.id) {
+      flushAuditNotes();
+      draftProjectRef.current = project;
+    }
     setAuditNotesDraft(project.auditNotes ?? '');
-  }, [project.id, project.auditNotes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, project.auditNotes, flushAuditNotes]);
 
   useEffect(() => {
     const savedValue = project.auditNotes ?? '';
     if (auditNotesDraft === savedValue) return;
     const timer = window.setTimeout(() => {
-      onUpdateProject({
-        ...project,
-        auditNotes: auditNotesDraft,
-        updatedAt: Date.now(),
-      });
+      flushAuditNotes();
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [auditNotesDraft, project, onUpdateProject]);
+  }, [auditNotesDraft, project.id, project.auditNotes, flushAuditNotes]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        flushAuditNotes();
+      }
+    };
+    window.addEventListener('pagehide', flushAuditNotes);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flushAuditNotes);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      flushAuditNotes();
+    };
+  }, [flushAuditNotes]);
 
   const lengthUnit = settings.unitSystem === 'imperial' ? 'ft' : 'm';
   const areaUnit = settings.unitSystem === 'imperial' ? 'ft²' : 'm²';
@@ -79,22 +156,47 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     'auditNotes',
   ];
 
-  const isFieldCollapsed = (id: string) => Boolean(collapsedFields[id]);
+  useEffect(() => {
+    if (!fullscreenCardId) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setFullscreenCardId(null);
+      }
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [fullscreenCardId]);
+
+  const isFieldCollapsed = (id: string) => collapsedFields[id] !== false;
   const toggleField = (id: string) => {
-    setCollapsedFields(prev => ({ ...prev, [id]: !prev[id] }));
+    setCollapsedFields(prev => ({ ...prev, [id]: prev[id] === false }));
   };
 
-  const allCollapsed = allFieldIds.length > 0 && allFieldIds.every(id => collapsedFields[id]);
+  const toggleFullScreen = (id: string) => {
+    setFullscreenCardId(prev => {
+      if (prev === id) return null;
+      setCollapsedFields(c => ({ ...c, [id]: false }));
+      return id;
+    });
+  };
+
+  const getCardContainerClass = (id: string, extra = '') =>
+    fullscreenCardId === id
+      ? 'fixed inset-0 z-[45] bg-white p-5 sm:p-8 overflow-y-auto flex flex-col gap-4 transition-all'
+      : `bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 flex flex-col gap-4 transition-all ${extra}`.trim();
+
+  const allCollapsed = allFieldIds.length > 0 && allFieldIds.every(id => isFieldCollapsed(id));
   const handleToggleAllFields = () => {
-    if (allCollapsed) {
-      setCollapsedFields({});
-    } else {
-      const next: Record<string, boolean> = {};
-      allFieldIds.forEach(id => {
-        next[id] = true;
-      });
-      setCollapsedFields(next);
-    }
+    const next: Record<string, boolean> = {};
+    allFieldIds.forEach(id => {
+      next[id] = !allCollapsed;
+    });
+    setCollapsedFields(prev => ({ ...prev, ...next }));
   };
 
   const updateCounts = (updates: Partial<ConstructionProject>) => {
@@ -105,56 +207,184 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     });
   };
 
-  // Post counts
-  const anglePostsCount = project.fencePosts.filter(p => p.postType === 'angle_post').length;
-  const interPostsCount = project.fencePosts.filter(p => p.postType === 'intermediate_post').length;
-  const strutPostsCount = project.fencePosts.filter(p => p.postType === 'strut_post').length;
-  const gatePostsCount = project.fencePosts.filter(p => p.postType === 'gate_post').length;
-  const totalEnabledPosts =
-    (items.anglePosts.enabled ? anglePostsCount : 0) +
-    (items.intermediatePosts.enabled ? interPostsCount : 0) +
-    (items.strutPosts.enabled ? strutPostsCount : 0) +
-    (items.gatePosts.enabled ? gatePostsCount : 0);
+  const lastCaptureRef = useRef<{ fieldKey: string; time: number } | null>(null);
+  const captureInFlightRef = useRef<Set<string>>(new Set());
 
-  // Mesh, RRM, Road, Side Drain
-  const totalMeshLength = project.fenceMeshSegments.reduce((a, c) => a + c.lengthMeters, 0);
-  const meshWidth = project.fenceMeshSegments[0]?.meshHeightMeters ?? settings.defaultMeshHeight;
-  const rrmSec = project.rrmWalls[0];
-  const rrmHeightEntries = rrmSec?.heightEntries ?? [rrmSec?.heightMeters ?? settings.defaultRrmHeight];
-  const rrmHeight = rrmHeightEntries.length > 0 ? rrmHeightEntries.reduce((a, b) => a + b, 0) / rrmHeightEntries.length : (rrmSec?.heightMeters ?? settings.defaultRrmHeight);
+  const captureLocationForInput = useCallback(
+    async (fieldKey: string, fieldLabel: string, valueSummary?: string) => {
+      const now = Date.now();
+      if (
+        lastCaptureRef.current &&
+        lastCaptureRef.current.fieldKey === fieldKey &&
+        now - lastCaptureRef.current.time < 4000
+      ) {
+        return;
+      }
+      if (captureInFlightRef.current.has(fieldKey)) return;
 
-  const rrmTopWidthEntries = rrmSec?.topWidthEntries ?? [rrmSec?.topWidthMeters ?? 0.38];
-  const rrmTopWidth = rrmTopWidthEntries.length > 0 ? rrmTopWidthEntries.reduce((a, b) => a + b, 0) / rrmTopWidthEntries.length : 0.38;
+      lastCaptureRef.current = { fieldKey, time: now };
+      captureInFlightRef.current.add(fieldKey);
+      const targetProjectId = project.id;
 
-  const rrmBotWidthEntries = rrmSec?.bottomWidthEntries ?? [rrmSec?.bottomWidthMeters ?? 0.38];
-  const rrmBotWidth = rrmBotWidthEntries.length > 0 ? rrmBotWidthEntries.reduce((a, b) => a + b, 0) / rrmBotWidthEntries.length : 0.38;
+      try {
+        const gps = onCaptureGps
+          ? await onCaptureGps()
+          : currentGps
+          ? { lat: currentGps.lat, lng: currentGps.lng, accuracy: currentGps.accuracy, timestamp: Date.now() }
+          : undefined;
 
-  const rrmWidth = Number(((rrmTopWidth + rrmBotWidth) / 2).toFixed(2));
-  const rrmLen = Number(project.rrmWalls.reduce((a, c) => a + c.lengthMeters, 0).toFixed(2));
-  const totalRrmVol = project.rrmWalls.reduce(
-    (a, c) => {
-      const topW = (c.topWidthEntries && c.topWidthEntries.length > 0) ? c.topWidthEntries.reduce((x, y) => x + y, 0) / c.topWidthEntries.length : c.topWidthMeters;
-      const botW = (c.bottomWidthEntries && c.bottomWidthEntries.length > 0) ? c.bottomWidthEntries.reduce((x, y) => x + y, 0) / c.bottomWidthEntries.length : c.bottomWidthMeters;
-      const h = (c.heightEntries && c.heightEntries.length > 0) ? c.heightEntries.reduce((x, y) => x + y, 0) / c.heightEntries.length : c.heightMeters;
-      return a + c.lengthMeters * h * ((topW + botW) / 2);
+        if (!gps) return;
+
+        const applyLocationPatch = (latest: ConstructionProject): ConstructionProject => {
+          const capturedAt = gps.timestamp || Date.now();
+          const existingPins: InputLocationPoint[] = latest.inputLocations ? [...latest.inputLocations] : [];
+          const latestSameIdx = existingPins.reduce(
+            (foundIdx, item, idx) => (item.fieldKey === fieldKey ? idx : foundIdx),
+            -1
+          );
+
+          if (latestSameIdx >= 0) {
+            const prevPin = existingPins[latestSameIdx];
+            const dist = calculateDistanceMeters(
+              prevPin.gps.lat,
+              prevPin.gps.lng,
+              gps.lat,
+              gps.lng
+            );
+            if (capturedAt - prevPin.capturedAt < 10000 && dist < 2) {
+              existingPins[latestSameIdx] = {
+                ...prevPin,
+                gps,
+                capturedAt,
+                ...(valueSummary ? { valueSummary } : {}),
+              };
+            } else {
+              existingPins.push({
+                id: `pin-${capturedAt}-${Math.random().toString(36).slice(2, 6)}`,
+                fieldKey,
+                fieldLabel,
+                valueSummary,
+                gps,
+                capturedAt,
+              });
+            }
+          } else {
+            existingPins.push({
+              id: `pin-${capturedAt}-${Math.random().toString(36).slice(2, 6)}`,
+              fieldKey,
+              fieldLabel,
+              valueSummary,
+              gps,
+              capturedAt,
+            });
+          }
+
+          const next: ConstructionProject = {
+            ...latest,
+            inputLocations: existingPins,
+            updatedAt: Date.now(),
+            ...(!latest.siteCoordinates
+              ? {
+                  siteCoordinates: {
+                    ...gps,
+                    label: latest.location || fieldLabel,
+                    source: 'gps' as const,
+                  },
+                }
+              : {}),
+          };
+
+          if (fieldKey === 'chainLinkMesh' && next.fenceMeshSegments.length > 0) {
+            const segs = [...next.fenceMeshSegments];
+            segs[0] = { ...segs[0], gps };
+            next.fenceMeshSegments = segs;
+          } else if (fieldKey === 'rrmWall' && next.rrmWalls.length > 0) {
+            const walls = [...next.rrmWalls];
+            walls[0] = { ...walls[0], gps };
+            next.rrmWalls = walls;
+          } else if (
+            (fieldKey === 'roadMeasurement' || fieldKey === 'sideDrain') &&
+            next.roadSections.length > 0
+          ) {
+            const roads = [...next.roadSections];
+            roads[0] = { ...roads[0], gps };
+            next.roadSections = roads;
+          } else if (fieldKey.startsWith('custom:')) {
+            const customId = fieldKey.slice('custom:'.length);
+            const latestSettings = getProjectSettings(next);
+            next.settings = {
+              ...latestSettings,
+              customItems: latestSettings.customItems.map(c =>
+                c.id === customId ? { ...c, gps } : c
+              ),
+            };
+          }
+
+          return next;
+        };
+
+        if (onPatchProject) {
+          onPatchProject(targetProjectId, applyLocationPatch);
+        } else if (project.id === targetProjectId) {
+          onUpdateProject(applyLocationPatch(project));
+        }
+      } finally {
+        captureInFlightRef.current.delete(fieldKey);
+      }
     },
-    0
+    [project, onCaptureGps, currentGps, onPatchProject, onUpdateProject]
   );
 
-  const roadSec = project.roadSections[0];
-  const roadLen = project.roadSections.reduce((a, c) => a + c.lengthMeters, 0);
-  const roadChainageStart = roadSec?.chainageStart ?? '0+000';
-  const roadChainageEnd = roadSec?.chainageEnd ?? formatChainage(roadLen);
+  const getLatestInputPin = (fieldKey: string): InputLocationPoint | undefined => {
+    const list = project.inputLocations || [];
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].fieldKey === fieldKey) return list[i];
+    }
+    return undefined;
+  };
+
+  const renderCapturedPinHint = (fieldKey: string) => {
+    const pin = getLatestInputPin(fieldKey);
+    if (!pin) return null;
+    return (
+      <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 bg-slate-50 border border-slate-200/70 rounded-lg px-2.5 py-1.5 tabular-nums">
+        <span className="inline-flex items-center gap-1.5 truncate">
+          <MapPin className="w-3 h-3 text-violet-600 shrink-0" />
+          <span className="font-medium text-slate-700 truncate">Map pin captured</span>
+        </span>
+        <span className="font-mono text-slate-700 shrink-0">
+          {pin.gps.lat.toFixed(5)}&deg;, {pin.gps.lng.toFixed(5)}&deg;
+        </span>
+      </div>
+    );
+  };
+
+  const m = computeMeasurements(project);
+  const anglePostsCount = m.totalAngle;
+  const interPostsCount = m.totalIntermed;
+  const strutPostsCount = m.totalStrut;
+  const gatePostsCount = m.totalGate;
+  const totalEnabledPosts = m.totalPosts;
+
+  const totalMeshLength = m.meshLen;
+  const meshWidth = m.meshWidth;
+  const meshArea = m.meshArea;
+
+  const rrmHeight = m.rrmHeight;
+  const rrmWidth = m.rrmWidth;
+  const rrmLen = roundTo(m.rrmLen, 2);
+  const totalRrmVol = m.rrmVol;
+
+  const roadLen = m.roadLen;
+  const roadChainageStart = m.chainageStart;
+  const roadChainageEnd = m.chainageEnd;
   const roadStartGps = roadSec?.startGps;
   const roadEndGps = roadSec?.endGps;
-
-  const roadWidthEntries = roadSec?.widthEntries ?? [roadSec?.widthMeters ?? settings.defaultRoadWidth];
-  const roadWidth = roadWidthEntries.length > 0 ? roadWidthEntries.reduce((a, b) => a + b, 0) / roadWidthEntries.length : (roadSec?.widthMeters ?? settings.defaultRoadWidth);
-
-  const roadDepthEntries = roadSec?.depthEntries ?? [roadSec?.earthworkCutDepthMeters ?? 0];
-  const roadDepth = roadDepthEntries.length > 0 ? roadDepthEntries.reduce((a, b) => a + b, 0) / roadDepthEntries.length : (roadSec?.earthworkCutDepthMeters ?? 0);
-
-  const sideDrainLen = project.roadSections.reduce((a, c) => a + (c.sideDrainLengthMeters || 0), 0);
+  const roadWidth = m.roadWidth;
+  const roadDepth = m.roadDepth;
+  const roadArea = m.roadArea;
+  const roadVol = m.roadVol;
+  const sideDrainLen = m.sideDrainLen;
 
   const handleAdjustPost = (postType: PostType, delta: number) => {
     if (window.navigator?.vibrate) window.navigator.vibrate(35);
@@ -186,7 +416,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
   const handleSetMesh = (newLen: number) => {
     if (window.navigator?.vibrate) window.navigator.vibrate(35);
-    const safeLen = Math.max(0, newLen);
+    const safeLen = roundTo(Math.max(0, newLen), 4);
     const current = [...project.fenceMeshSegments];
     if (current.length === 0) {
       current.push({
@@ -197,6 +427,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
         meshGauge: '10 Gauge',
         barbedWireStrands: 3,
         hasTensionWire: true,
+        gps: currentGps ? { lat: currentGps.lat, lng: currentGps.lng, accuracy: currentGps.accuracy, timestamp: Date.now() } : undefined,
         createdAt: Date.now(),
       });
     } else {
@@ -222,6 +453,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
         meshGauge: '10 Gauge',
         barbedWireStrands: 3,
         hasTensionWire: true,
+        gps: currentGps ? { lat: currentGps.lat, lng: currentGps.lng, accuracy: currentGps.accuracy, timestamp: Date.now() } : undefined,
         createdAt: Date.now(),
       });
     } else {
@@ -239,6 +471,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
       heightMeters: settings.defaultRrmHeight || 0.6,
       topWidthMeters: 0.38,
       bottomWidthMeters: 0.38,
+      gps: currentGps ? { lat: currentGps.lat, lng: currentGps.lng, accuracy: currentGps.accuracy, timestamp: Date.now() } : undefined,
       createdAt: Date.now(),
     }];
   };
@@ -250,12 +483,22 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   }) => {
     if (window.navigator?.vibrate) window.navigator.vibrate(35);
     const current = ensureRrmWall();
-    const safeWidth = updates.widthMeters !== undefined ? Math.max(0, updates.widthMeters) : undefined;
+    const safeWidth = updates.widthMeters !== undefined ? roundTo(Math.max(0, updates.widthMeters), 4) : undefined;
+    const safeHeight = updates.heightMeters !== undefined ? roundTo(Math.max(0, updates.heightMeters), 4) : undefined;
+    if (safeWidth !== undefined) setRrmWidthText(String(safeWidth));
+    if (safeHeight !== undefined) setRrmHeightText(String(safeHeight));
     current[0] = {
       ...current[0],
-      ...(updates.lengthMeters !== undefined ? { lengthMeters: Math.max(0, updates.lengthMeters) } : {}),
-      ...(safeWidth !== undefined ? { topWidthMeters: safeWidth, bottomWidthMeters: safeWidth } : {}),
-      ...(updates.heightMeters !== undefined ? { heightMeters: Math.max(0, updates.heightMeters) } : {}),
+      ...(updates.lengthMeters !== undefined ? { lengthMeters: roundTo(Math.max(0, updates.lengthMeters), 4) } : {}),
+      ...(safeWidth !== undefined
+        ? {
+            topWidthMeters: safeWidth,
+            bottomWidthMeters: safeWidth,
+            topWidthEntries: undefined,
+            bottomWidthEntries: undefined,
+          }
+        : {}),
+      ...(safeHeight !== undefined ? { heightMeters: safeHeight, heightEntries: undefined } : {}),
     };
     if (updates.lengthMeters !== undefined && current.length > 1) {
       for (let i = 1; i < current.length; i++) {
@@ -280,13 +523,14 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
       acThicknessMm: 50,
       earthworkCutDepthMeters: 0,
       sideDrainLengthMeters: 0,
+      gps: currentGps ? { lat: currentGps.lat, lng: currentGps.lng, accuracy: currentGps.accuracy, timestamp: Date.now() } : undefined,
       createdAt: Date.now(),
     }];
   };
 
   const handleSetRoadLen = (newLen: number) => {
     if (window.navigator?.vibrate) window.navigator.vibrate(35);
-    const safeLen = Math.max(0, newLen);
+    const safeLen = roundTo(Math.max(0, newLen), 4);
     const current = ensureRoadSection();
     const startNum = parseChainage(current[0].chainageStart) ?? 0;
     current[0] = {
@@ -360,21 +604,24 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
   const handleSetRoadWidth = (w: number) => {
     const safeW = Math.max(0, w);
+    setRoadWidthText(String(safeW));
     const current = ensureRoadSection();
-    current[0] = { ...current[0], widthMeters: safeW };
+    current[0] = { ...current[0], widthMeters: safeW, widthEntries: undefined };
     updateCounts({ roadSections: current });
   };
 
   const handleSetRoadDepth = (d: number) => {
     const safeD = Math.max(0, d);
+    setRoadDepthText(String(safeD));
     const current = ensureRoadSection();
-    current[0] = { ...current[0], earthworkCutDepthMeters: safeD };
+    current[0] = { ...current[0], earthworkCutDepthMeters: safeD, depthEntries: undefined };
     updateCounts({ roadSections: current });
   };
 
   const handleSetRoadWidthEntries = (inputStr: string) => {
+    setRoadWidthText(inputStr);
     const parsed = inputStr
-      .split(/[,,\s]+/)
+      .split(/[,\s]+/)
       .map(s => parseFloat(s.trim()))
       .filter(n => !isNaN(n) && n >= 0);
     const avg = parsed.length > 0 ? parsed.reduce((a, b) => a + b, 0) / parsed.length : settings.defaultRoadWidth;
@@ -388,8 +635,9 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   };
 
   const handleSetRoadDepthEntries = (inputStr: string) => {
+    setRoadDepthText(inputStr);
     const parsed = inputStr
-      .split(/[,,\s]+/)
+      .split(/[,\s]+/)
       .map(s => parseFloat(s.trim()))
       .filter(n => !isNaN(n) && n >= 0);
     const avg = parsed.length > 0 ? parsed.reduce((a, b) => a + b, 0) / parsed.length : 0;
@@ -403,8 +651,9 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   };
 
   const handleSetRrmWidthEntries = (inputStr: string) => {
+    setRrmWidthText(inputStr);
     const parsed = inputStr
-      .split(/[,,\s]+/)
+      .split(/[,\s]+/)
       .map(s => parseFloat(s.trim()))
       .filter(n => !isNaN(n) && n >= 0);
     const avg = parsed.length > 0 ? parsed.reduce((a, b) => a + b, 0) / parsed.length : 0.38;
@@ -420,8 +669,9 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   };
 
   const handleSetRrmHeightEntries = (inputStr: string) => {
+    setRrmHeightText(inputStr);
     const parsed = inputStr
-      .split(/[,,\s]+/)
+      .split(/[,\s]+/)
       .map(s => parseFloat(s.trim()))
       .filter(n => !isNaN(n) && n >= 0);
     const avg = parsed.length > 0 ? parsed.reduce((a, b) => a + b, 0) / parsed.length : settings.defaultRrmHeight;
@@ -462,7 +712,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
   const handleSetSideDrain = (newLen: number) => {
     if (window.navigator?.vibrate) window.navigator.vibrate(35);
-    const safeLen = Math.max(0, newLen);
+    const safeLen = roundTo(Math.max(0, newLen), 4);
     const current = ensureRoadSection();
     current[0] = { ...current[0], sideDrainLengthMeters: safeLen };
     if (current.length > 1) {
@@ -475,7 +725,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
   const handleSetCustomItemQty = (itemId: string, newQty: number) => {
     if (window.navigator?.vibrate) window.navigator.vibrate(35);
-    const safeQty = Math.max(0, newQty);
+    const safeQty = roundTo(Math.max(0, newQty), 4);
     const updatedCustom = settings.customItems.map(c =>
       c.id === itemId ? { ...c, quantity: safeQty } : c
     );
@@ -510,7 +760,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
       : 'No audit notes recorded';
 
     return (
-      <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 md:col-span-2 flex flex-col gap-4 transition-all">
+      <div className={getCardContainerClass('auditNotes', 'md:col-span-2')}>
         {renderCardHeader(
           'auditNotes',
           'Audit Notes',
@@ -525,6 +775,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
               <textarea
                 rows={3}
                 value={auditNotesDraft}
+                onFocus={() => void captureLocationForInput('auditNotes', 'Audit Notes', auditNotesDraft.trim().slice(0, 40) || undefined)}
+                onClick={() => void captureLocationForInput('auditNotes', 'Audit Notes', auditNotesDraft.trim().slice(0, 40) || undefined)}
                 onChange={(e) => setAuditNotesDraft(e.target.value)}
                 onBlur={() => handleSaveAuditNotes(auditNotesDraft)}
                 placeholder="Enter field observations, site conditions, access issues, or notes for the audit record..."
@@ -532,6 +784,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                 className="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition resize-y min-h-[104px]"
               />
             </div>
+            {renderCapturedPinHint('auditNotes')}
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums">
@@ -592,14 +845,15 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     description: string
   ) => {
     const collapsed = isFieldCollapsed(fieldId);
+    const isFullscreen = fullscreenCardId === fieldId;
     return (
-      <button
-        type="button"
-        onClick={() => toggleField(fieldId)}
-        aria-expanded={!collapsed}
-        className="w-full text-left flex items-start justify-between gap-3 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xl"
-      >
-        <div className="min-w-0 flex-1">
+      <div className="w-full flex items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => toggleField(fieldId)}
+          aria-expanded={!collapsed}
+          className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xl"
+        >
           <div className="flex items-baseline flex-wrap gap-x-2.5 gap-y-0.5">
             <h3 className="font-bold text-slate-900 text-base group-hover:text-slate-700 transition">
               {title}
@@ -615,16 +869,38 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
           ) : (
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">{description}</p>
           )}
+        </button>
+
+        <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+          <button
+            type="button"
+            onClick={() => toggleFullScreen(fieldId)}
+            aria-label={isFullscreen ? `Exit full screen for ${title}` : `Extend ${title} to full screen`}
+            aria-pressed={isFullscreen}
+            title={isFullscreen ? 'Restore card size (Esc)' : 'Extend to full screen'}
+            className={`w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+              isFullscreen
+                ? 'bg-slate-900 text-white hover:bg-slate-800'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+            }`}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => toggleField(fieldId)}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+            title={collapsed ? 'Expand card' : 'Collapse card'}
+            className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+          >
+            <ChevronDown
+              className={`w-4 h-4 transition-transform duration-200 ${collapsed ? '-rotate-90' : 'rotate-0'}`}
+            />
+          </button>
         </div>
-        <span
-          className="mt-0.5 w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 group-hover:bg-slate-200 text-slate-600 flex items-center justify-center flex-shrink-0 transition"
-          aria-hidden="true"
-        >
-          <ChevronDown
-            className={`w-4 h-4 transition-transform duration-200 ${collapsed ? '-rotate-90' : 'rotate-0'}`}
-          />
-        </span>
-      </button>
+      </div>
     );
   };
 
@@ -640,7 +916,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     return (
       <div
         key={postType}
-        className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 flex flex-col gap-4 transition-all"
+        className={getCardContainerClass(postType)}
       >
         {renderCardHeader(postType, title, unit, `Counted: ${count} ${unit}`, description)}
 
@@ -649,7 +925,10 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
             <div className="flex items-center justify-between bg-slate-50/90 p-3.5 rounded-xl">
               <button
                 type="button"
-                onClick={() => handleAdjustPost(postType, -1)}
+                onClick={() => {
+                  void captureLocationForInput(postType, title, `${Math.max(0, count - 1)} ${unit}`);
+                  handleAdjustPost(postType, -1);
+                }}
                 aria-label={`Decrease ${title}`}
                 className="w-12 h-12 bg-white border border-slate-200 rounded-xl text-slate-700 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition duration-150 flex items-center justify-center active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
               >
@@ -661,7 +940,10 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => handleAdjustPost(postType, 1)}
+                onClick={() => {
+                  void captureLocationForInput(postType, title, `${count + 1} ${unit}`);
+                  handleAdjustPost(postType, 1);
+                }}
                 aria-label={`Increase ${title}`}
                 className="w-12 h-12 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl shadow-xs transition duration-150 flex items-center justify-center active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
               >
@@ -676,7 +958,10 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                     <button
                       key={qty}
                       type="button"
-                      onClick={() => handleAdjustPost(postType, qty)}
+                      onClick={() => {
+                        void captureLocationForInput(postType, title, `${count + qty} ${unit}`);
+                        handleAdjustPost(postType, qty);
+                      }}
                       className="min-h-[44px] py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl tabular-nums active:scale-[0.97] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
                     >
                       +{qty}
@@ -690,6 +975,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                     min="1"
                     step="1"
                     value={bulkAngleQty}
+                    onFocus={() => void captureLocationForInput(postType, `${title} (Bulk Qty)`, `${count} ${unit}`)}
+                    onClick={() => void captureLocationForInput(postType, `${title} (Bulk Qty)`, `${count} ${unit}`)}
                     onChange={(e) => setBulkAngleQty(e.target.value)}
                     placeholder="Qty"
                     aria-label="Bulk post quantity"
@@ -699,7 +986,10 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                     type="button"
                     onClick={() => {
                       const qty = parseInt(bulkAngleQty, 10);
-                      if (qty > 0) handleAdjustPost(postType, qty);
+                      if (qty > 0) {
+                        void captureLocationForInput(postType, title, `${count + qty} ${unit}`);
+                        handleAdjustPost(postType, qty);
+                      }
                     }}
                     className="min-h-[44px] px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold rounded-xl transition duration-150 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                   >
@@ -720,6 +1010,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                 </div>
               </div>
             )}
+
+            {renderCapturedPinHint(postType)}
           </div>
         )}
       </div>
@@ -730,101 +1022,146 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     <div className="space-y-4 sm:space-y-6 pb-4 max-w-4xl mx-auto">
       
       {/* Field Workstation Toolbar Card */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90 space-y-4 text-[9px]">
-        <div className="flex flex-col gap-3.5">
-          <div className="min-w-0">
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight truncate">
-              Field Measurement Worksheet
-            </h2>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mt-1">
-              <span>{project.name}</span>
-              <span aria-hidden="true">&middot;</span>
-              <span className="capitalize">{settings.unitSystem} units</span>
-              <span aria-hidden="true">&middot;</span>
-              <span className="tabular-nums font-medium text-slate-700">
-                {totalEnabledPosts} posts &middot; {totalMeshLength} {items.chainLinkMesh.unit} mesh &middot; {roadLen} {items.roadMeasurement.unit} road
-              </span>
+      <div
+        className={
+          fullscreenCardId === 'toolbar'
+            ? 'fixed inset-0 z-[45] bg-white p-5 sm:p-8 overflow-y-auto space-y-4 transition-all'
+            : 'bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90 space-y-4 text-[9px] transition-all'
+        }
+      >
+        <div className="flex flex-col gap-3.5 text-[7px]">
+          <div className="flex items-start justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => toggleField('toolbar')}
+              aria-expanded={!isFieldCollapsed('toolbar')}
+              className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xl"
+            >
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight truncate group-hover:text-slate-700 transition">
+                Field Measurement Worksheet
+              </h2>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mt-1">
+                <span>{project.name}</span>
+                <span aria-hidden="true">&middot;</span>
+                <span className="capitalize">{settings.unitSystem} units</span>
+                <span aria-hidden="true">&middot;</span>
+                <span className="tabular-nums font-medium text-slate-700">
+                  {totalEnabledPosts} posts &middot; {totalMeshLength} {items.chainLinkMesh.unit} mesh &middot; {roadLen} {items.roadMeasurement.unit} road
+                </span>
+              </div>
+            </button>
+
+            <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+              <button
+                type="button"
+                onClick={() => toggleFullScreen('toolbar')}
+                aria-label={fullscreenCardId === 'toolbar' ? 'Exit full screen for Field Measurement Worksheet' : 'Extend Field Measurement Worksheet to full screen'}
+                aria-pressed={fullscreenCardId === 'toolbar'}
+                title={fullscreenCardId === 'toolbar' ? 'Restore card size (Esc)' : 'Extend to full screen'}
+                className={`w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                  fullscreenCardId === 'toolbar'
+                    ? 'bg-slate-900 text-white hover:bg-slate-800'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                {fullscreenCardId === 'toolbar' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => toggleField('toolbar')}
+                aria-expanded={!isFieldCollapsed('toolbar')}
+                aria-label={isFieldCollapsed('toolbar') ? 'Expand Field Measurement Worksheet' : 'Collapse Field Measurement Worksheet'}
+                title={isFieldCollapsed('toolbar') ? 'Expand card' : 'Collapse card'}
+                className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              >
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform duration-200 ${isFieldCollapsed('toolbar') ? '-rotate-90' : 'rotate-0'}`}
+                />
+              </button>
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <select
-                value={project.id}
-                onChange={(e) => {
-                  const found = savedProjects.find(p => p.id === e.target.value);
-                  if (found) onSwitchProject(found);
-                }}
-                aria-label="Select site"
-                className="flex-1 sm:flex-none min-w-0 min-h-[44px] px-3 py-2 bg-slate-50 text-slate-800 text-base sm:text-xs font-semibold rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
-              >
-                {savedProjects.map(p => (
-                  <option key={p.id} value={p.id}>Site: {p.name}</option>
-                ))}
-              </select>
+          {!isFieldCollapsed('toolbar') && (
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <select
+                  value={project.id}
+                  onChange={(e) => {
+                    const found = savedProjects.find(p => p.id === e.target.value);
+                    if (found) onSwitchProject(found);
+                  }}
+                  aria-label="Select site"
+                  className="flex-1 sm:flex-none min-w-0 min-h-[44px] px-3 py-2 bg-slate-50 text-slate-800 text-base sm:text-xs font-semibold rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                >
+                  {savedProjects.map(p => (
+                    <option key={p.id} value={p.id}>Site: {p.name}</option>
+                  ))}
+                </select>
 
-              <button
-                type="button"
-                onClick={onOpenSiteManager}
-                className="min-h-[44px] px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
-              >
-                <Building2 className="w-4 h-4 text-slate-600" />
-                <span>Sites</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                className="min-h-[44px] px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
-              >
-                <Settings className="w-4 h-4" />
-                <span>Units &amp; Items</span>
-              </button>
-
-              {anyEnabled && (
                 <button
                   type="button"
-                  onClick={handleToggleAllFields}
+                  onClick={onOpenSiteManager}
                   className="min-h-[44px] px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
-                  title={allCollapsed ? 'Expand all measurement fields' : 'Collapse all measurement fields'}
                 >
-                  <ChevronsUpDown className="w-4 h-4 text-slate-600" />
-                  <span>{allCollapsed ? 'Expand All' : 'Collapse All'}</span>
+                  <Building2 className="w-4 h-4 text-slate-600" />
+                  <span>Sites</span>
                 </button>
-              )}
+              </div>
 
-              <button
-                type="button"
-                onClick={() => exportProjectToExcel(project)}
-                className="min-h-[44px] px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
-                title="Export Excel CSV"
-              >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                <span>Excel</span>
-              </button>
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="min-h-[44px] px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                >
+                  <Settings className="w-4 h-4" />
+                  <span>Units &amp; Items</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => exportProjectToPdf(project)}
-                className="min-h-[44px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
-              >
-                <Download className="w-4 h-4" />
-                <span>PDF</span>
-              </button>
+                {anyEnabled && (
+                  <button
+                    type="button"
+                    onClick={handleToggleAllFields}
+                    className="min-h-[44px] px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    title={allCollapsed ? 'Expand all measurement fields' : 'Collapse all measurement fields'}
+                  >
+                    <ChevronsUpDown className="w-4 h-4 text-slate-600" />
+                    <span>{allCollapsed ? 'Expand All' : 'Collapse All'}</span>
+                  </button>
+                )}
 
-              <button
-                type="button"
-                onClick={handleSaveRecordedData}
-                className="col-span-2 sm:col-span-1 min-h-[44px] px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.98]"
-                title="Save all recorded measurements and notes"
-              >
-                <Save className="w-4 h-4" />
-                <span>Save Data</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => exportProjectToExcel(project)}
+                  className="min-h-[44px] px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                  title="Export Excel CSV"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  <span>Excel</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => (onOpenReport ? onOpenReport('all') : exportProjectToPdf(project, currentGps))}
+                  className="min-h-[44px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>PDF / Report</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveRecordedData}
+                  className="col-span-2 sm:col-span-1 min-h-[44px] px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.98]"
+                  title="Save all recorded measurements and notes"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save Data</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -847,7 +1184,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
           
           {items.anglePosts.enabled && renderPostCounterCard(
             'angle_post',
-            'Angle Posts (Corner / End)',
+            'Angle Post',
             'Count single posts or add a bulk batch.',
             anglePostsCount,
             items.anglePosts.unit,
@@ -880,12 +1217,12 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
           {/* Chain-Link Mesh */}
           {items.chainLinkMesh.enabled && (
-            <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 flex flex-col gap-4 transition-all">
+            <div className={getCardContainerClass('chainLinkMesh')}>
               {renderCardHeader(
                 'chainLinkMesh',
                 'Chain-Link Mesh',
                 items.chainLinkMesh.unit,
-                `Length: ${totalMeshLength.toLocaleString()} ${items.chainLinkMesh.unit} · Width: ${meshWidth}${lengthUnit} · Area: ${(totalMeshLength * meshWidth).toFixed(1)} ${areaUnit}`,
+                `Length: ${totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${items.chainLinkMesh.unit} · Width: ${meshWidth}${lengthUnit} · Area: ${meshArea.toFixed(2)} ${areaUnit}`,
                 'Enter mesh length and width/height, or tap quick length buttons.'
               )}
 
@@ -894,10 +1231,10 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   <div className="flex items-center justify-between bg-slate-50/90 p-4 rounded-xl">
                     <div className="text-center w-full">
                       <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 tabular-nums tracking-tight">
-                        {totalMeshLength.toLocaleString()} <span className="text-base font-medium text-slate-500">{items.chainLinkMesh.unit}</span>
+                        {totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-base font-medium text-slate-500">{items.chainLinkMesh.unit}</span>
                       </div>
                       <div className="text-xs text-slate-500 font-medium mt-1 tabular-nums">
-                        Width: {meshWidth}{lengthUnit} &middot; Area: {(totalMeshLength * meshWidth).toFixed(1)} {areaUnit}
+                        Width: {meshWidth}{lengthUnit} &middot; Area: {meshArea.toFixed(2)} {areaUnit}
                       </div>
                     </div>
                     {totalMeshLength > 0 && (
@@ -923,6 +1260,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         step="0.5"
                         min="0"
                         value={totalMeshLength}
+                        onFocus={() => void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Length', `${totalMeshLength} ${items.chainLinkMesh.unit}`)}
+                        onClick={() => void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Length', `${totalMeshLength} ${items.chainLinkMesh.unit}`)}
                         onChange={(e) => handleSetMesh(parseFloat(e.target.value) || 0)}
                         className={inputClass}
                       />
@@ -937,6 +1276,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         step="0.1"
                         min="0"
                         value={meshWidth}
+                        onFocus={() => void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Width', `${meshWidth} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Width', `${meshWidth} ${lengthUnit}`)}
                         onChange={(e) => handleSetMeshWidth(parseFloat(e.target.value) || 0)}
                         className={inputClass}
                       />
@@ -948,13 +1289,17 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       <button
                         key={step}
                         type="button"
-                        onClick={() => handleSetMesh(totalMeshLength + step)}
+                        onClick={() => {
+                          void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Length', `${totalMeshLength + step} ${items.chainLinkMesh.unit}`);
+                          handleSetMesh(totalMeshLength + step);
+                        }}
                         className="min-h-[44px] py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl tabular-nums active:scale-[0.97] transition duration-150"
                       >
                         +{step}{items.chainLinkMesh.unit}
                       </button>
                     ))}
                   </div>
+                  {renderCapturedPinHint('chainLinkMesh')}
                 </div>
               )}
             </div>
@@ -962,10 +1307,10 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
           {/* RRM Foundation Wall (Length, Width & Height) */}
           {items.rrmWall.enabled && (
-            <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 flex flex-col gap-4 transition-all">
+            <div className={getCardContainerClass('rrmWall')}>
               {renderCardHeader(
                 'rrmWall',
-                'RRM Foundation Wall',
+                'RMM wall',
                 items.rrmWall.unit,
                 `Volume: ${totalRrmVol.toFixed(2)} ${items.rrmWall.unit} · L: ${rrmLen}${lengthUnit} × W: ${rrmWidth}${lengthUnit} × H: ${rrmHeight}${lengthUnit}`,
                 'Enter length, width, and height to compute wall masonry volume.'
@@ -1005,6 +1350,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         step="0.5"
                         min="0"
                         value={rrmLen}
+                        onFocus={() => void captureLocationForInput('rrmWall', 'RMM Wall Length', `${rrmLen} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('rrmWall', 'RMM Wall Length', `${rrmLen} ${lengthUnit}`)}
                         onChange={(e) => handleSetRrmDimensions({ lengthMeters: parseFloat(e.target.value) || 0 })}
                         className={inputClass}
                       />
@@ -1019,6 +1366,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         step="0.05"
                         min="0"
                         value={rrmWidth}
+                        onFocus={() => void captureLocationForInput('rrmWall', 'RMM Wall Width', `${rrmWidth} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('rrmWall', 'RMM Wall Width', `${rrmWidth} ${lengthUnit}`)}
                         onChange={(e) => handleSetRrmDimensions({ widthMeters: parseFloat(e.target.value) || 0 })}
                         className={inputClass}
                       />
@@ -1033,6 +1382,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         step="0.05"
                         min="0"
                         value={rrmHeight}
+                        onFocus={() => void captureLocationForInput('rrmWall', 'RMM Wall Height', `${rrmHeight} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('rrmWall', 'RMM Wall Height', `${rrmHeight} ${lengthUnit}`)}
                         onChange={(e) => handleSetRrmDimensions({ heightMeters: parseFloat(e.target.value) || 0 })}
                         className={inputClass}
                       />
@@ -1044,7 +1395,10 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       <button
                         key={step}
                         type="button"
-                        onClick={() => handleSetRrmDimensions({ lengthMeters: rrmLen + step })}
+                        onClick={() => {
+                          void captureLocationForInput('rrmWall', 'RMM Wall Length', `${rrmLen + step} ${lengthUnit}`);
+                          handleSetRrmDimensions({ lengthMeters: rrmLen + step });
+                        }}
                         className="min-h-[44px] py-2 px-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl tabular-nums whitespace-nowrap active:scale-[0.97] transition duration-150"
                       >
                         +{step}{lengthUnit}<span className="hidden sm:inline"> Length</span>
@@ -1060,10 +1414,17 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       <input
                         type="text"
                         placeholder="e.g. 0.38, 0.40, 0.36"
-                        value={rrmSec?.topWidthEntries ? rrmSec.topWidthEntries.join(', ') : ''}
+                        value={rrmWidthText}
+                        onFocus={() => void captureLocationForInput('rrmWall', 'RMM Wall Width Samples', rrmWidthText || `${rrmWidth} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('rrmWall', 'RMM Wall Width Samples', rrmWidthText || `${rrmWidth} ${lengthUnit}`)}
                         onChange={(e) => handleSetRrmWidthEntries(e.target.value)}
                         className={`${inputClass} font-mono`}
                       />
+                      {rrmSec?.topWidthEntries && rrmSec.topWidthEntries.length > 0 && (
+                        <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                          {rrmSec.topWidthEntries.length} sample{rrmSec.topWidthEntries.length === 1 ? '' : 's'} &middot; Avg: <span className="font-semibold text-slate-800">{rrmWidth} {lengthUnit}</span>
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -1072,12 +1433,21 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       <input
                         type="text"
                         placeholder="e.g. 0.6, 0.65, 0.58"
-                        value={rrmSec?.heightEntries ? rrmSec.heightEntries.join(', ') : ''}
+                        value={rrmHeightText}
+                        onFocus={() => void captureLocationForInput('rrmWall', 'RMM Wall Height Samples', rrmHeightText || `${rrmHeight} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('rrmWall', 'RMM Wall Height Samples', rrmHeightText || `${rrmHeight} ${lengthUnit}`)}
                         onChange={(e) => handleSetRrmHeightEntries(e.target.value)}
                         className={`${inputClass} font-mono`}
                       />
+                      {rrmSec?.heightEntries && rrmSec.heightEntries.length > 0 && (
+                        <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                          {rrmSec.heightEntries.length} sample{rrmSec.heightEntries.length === 1 ? '' : 's'} &middot; Avg: <span className="font-semibold text-slate-800">{rrmHeight} {lengthUnit}</span>
+                        </p>
+                      )}
                     </div>
                   </div>
+
+                  {renderCapturedPinHint('rrmWall')}
                 </div>
               )}
             </div>
@@ -1085,12 +1455,12 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
           {/* Road Measurement (Length, Breadth/Width & Depth) */}
           {items.roadMeasurement.enabled && (
-            <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 md:col-span-2 flex flex-col gap-4 transition-all">
+            <div className={getCardContainerClass('roadMeasurement', 'md:col-span-2')}>
               {renderCardHeader(
                 'roadMeasurement',
                 'Road Measurement',
                 items.roadMeasurement.unit,
-                `Ch. ${roadChainageStart || '0+000'} – ${roadChainageEnd || formatChainage(roadLen)} · Length: ${roadLen} ${items.roadMeasurement.unit} · Width: ${roadWidth}${lengthUnit} · Area: ${(roadLen * roadWidth).toLocaleString()} ${areaUnit}`,
+                `Ch. ${roadChainageStart || '0+000'} – ${roadChainageEnd || formatChainage(roadLen)} · Length: ${roadLen} ${items.roadMeasurement.unit} · Width: ${roadWidth}${lengthUnit} · Area: ${roadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${areaUnit}`,
                 'Enter road chainage (start/end), length, breadth/width, and optional depth. Surface area and volume update live.'
               )}
 
@@ -1120,13 +1490,13 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       <div>
                         <div className="text-xs text-slate-500 font-medium">Total Area</div>
                         <div className="text-xl sm:text-3xl font-extrabold text-emerald-600 tabular-nums mt-0.5">
-                          {(roadLen * roadWidth).toLocaleString()} <span className="text-xs sm:text-sm font-medium text-slate-500">{areaUnit}</span>
+                          {roadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-xs sm:text-sm font-medium text-slate-500">{areaUnit}</span>
                         </div>
                       </div>
                       <div>
                         <div className="text-xs text-slate-500 font-medium">Volume</div>
                         <div className="text-xl sm:text-3xl font-extrabold text-indigo-600 tabular-nums mt-0.5">
-                          {(roadLen * roadWidth * roadDepth).toFixed(1)} <span className="text-xs sm:text-sm font-medium text-slate-500">{volumeUnit}</span>
+                          {roadVol.toFixed(2)} <span className="text-xs sm:text-sm font-medium text-slate-500">{volumeUnit}</span>
                         </div>
                       </div>
                     </div>
@@ -1142,6 +1512,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         inputMode="text"
                         placeholder="0+000"
                         value={roadChainageStart}
+                        onFocus={() => void captureLocationForInput('roadMeasurement', 'Road Chainage Start', roadChainageStart)}
+                        onClick={() => void captureLocationForInput('roadMeasurement', 'Road Chainage Start', roadChainageStart)}
                         onChange={(e) => handleSetRoadChainageStart(e.target.value)}
                         className={`${inputClass} font-mono`}
                       />
@@ -1155,6 +1527,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         inputMode="text"
                         placeholder="0+250"
                         value={roadChainageEnd}
+                        onFocus={() => void captureLocationForInput('roadMeasurement', 'Road Chainage End', roadChainageEnd)}
+                        onClick={() => void captureLocationForInput('roadMeasurement', 'Road Chainage End', roadChainageEnd)}
                         onChange={(e) => handleSetRoadChainageEnd(e.target.value)}
                         className={`${inputClass} font-mono`}
                       />
@@ -1172,6 +1546,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         step="1"
                         min="0"
                         value={roadLen}
+                        onFocus={() => void captureLocationForInput('roadMeasurement', 'Road Length', `${roadLen} ${items.roadMeasurement.unit}`)}
+                        onClick={() => void captureLocationForInput('roadMeasurement', 'Road Length', `${roadLen} ${items.roadMeasurement.unit}`)}
                         onChange={(e) => handleSetRoadLen(parseFloat(e.target.value) || 0)}
                         className={inputClass}
                       />
@@ -1186,6 +1562,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         step="0.5"
                         min="0"
                         value={roadWidth}
+                        onFocus={() => void captureLocationForInput('roadMeasurement', 'Road Width', `${roadWidth} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('roadMeasurement', 'Road Width', `${roadWidth} ${lengthUnit}`)}
                         onChange={(e) => handleSetRoadWidth(parseFloat(e.target.value) || 0)}
                         className={inputClass}
                       />
@@ -1200,6 +1578,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         step="0.05"
                         min="0"
                         value={roadDepth}
+                        onFocus={() => void captureLocationForInput('roadMeasurement', 'Road Depth', `${roadDepth} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('roadMeasurement', 'Road Depth', `${roadDepth} ${lengthUnit}`)}
                         onChange={(e) => handleSetRoadDepth(parseFloat(e.target.value) || 0)}
                         className={inputClass}
                       />
@@ -1211,7 +1591,10 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       <button
                         key={step}
                         type="button"
-                        onClick={() => handleSetRoadLen(roadLen + step)}
+                        onClick={() => {
+                          void captureLocationForInput('roadMeasurement', 'Road Length', `${roadLen + step} ${items.roadMeasurement.unit}`);
+                          handleSetRoadLen(roadLen + step);
+                        }}
                         className="min-h-[44px] py-2.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl tabular-nums whitespace-nowrap active:scale-[0.97] transition duration-150"
                       >
                         +{step}{items.roadMeasurement.unit}<span className="hidden sm:inline"> Length</span>
@@ -1227,10 +1610,17 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       <input
                         type="text"
                         placeholder="e.g. 3.5, 3.6, 3.4"
-                        value={roadSec?.widthEntries ? roadSec.widthEntries.join(', ') : ''}
+                        value={roadWidthText}
+                        onFocus={() => void captureLocationForInput('roadMeasurement', 'Road Width Samples', roadWidthText || `${roadWidth} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('roadMeasurement', 'Road Width Samples', roadWidthText || `${roadWidth} ${lengthUnit}`)}
                         onChange={(e) => handleSetRoadWidthEntries(e.target.value)}
                         className={`${inputClass} font-mono`}
                       />
+                      {roadSec?.widthEntries && roadSec.widthEntries.length > 0 && (
+                        <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                          {roadSec.widthEntries.length} sample{roadSec.widthEntries.length === 1 ? '' : 's'} &middot; Avg: <span className="font-semibold text-slate-800">{roadWidth} {lengthUnit}</span>
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -1239,12 +1629,20 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       <input
                         type="text"
                         placeholder="e.g. 0.3, 0.35, 0.28"
-                        value={roadSec?.depthEntries ? roadSec.depthEntries.join(', ') : ''}
+                        value={roadDepthText}
+                        onFocus={() => void captureLocationForInput('roadMeasurement', 'Road Depth Samples', roadDepthText || `${roadDepth} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('roadMeasurement', 'Road Depth Samples', roadDepthText || `${roadDepth} ${lengthUnit}`)}
                         onChange={(e) => handleSetRoadDepthEntries(e.target.value)}
                         className={`${inputClass} font-mono`}
                       />
+                      {roadSec?.depthEntries && roadSec.depthEntries.length > 0 && (
+                        <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                          {roadSec.depthEntries.length} sample{roadSec.depthEntries.length === 1 ? '' : 's'} &middot; Avg: <span className="font-semibold text-slate-800">{roadDepth} {lengthUnit}</span>
+                        </p>
+                      )}
                     </div>
                   </div>
+                  {renderCapturedPinHint('roadMeasurement')}
 
                   {/* Road Alignment GPS Capture */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-slate-100">
@@ -1317,7 +1715,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
           {/* Road Side Drain Length */}
           {items.sideDrain.enabled && (
-            <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 flex flex-col gap-4 transition-all">
+            <div className={getCardContainerClass('sideDrain')}>
               {renderCardHeader(
                 'sideDrain',
                 'Road Side Drain',
@@ -1343,6 +1741,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                     step="1"
                     min="0"
                     value={sideDrainLen}
+                    onFocus={() => void captureLocationForInput('sideDrain', 'Road Side Drain', `${sideDrainLen} ${items.sideDrain.unit}`)}
+                    onClick={() => void captureLocationForInput('sideDrain', 'Road Side Drain', `${sideDrainLen} ${items.sideDrain.unit}`)}
                     onChange={(e) => handleSetSideDrain(parseFloat(e.target.value) || 0)}
                     className={inputClass}
                   />
@@ -1352,13 +1752,17 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       <button
                         key={step}
                         type="button"
-                        onClick={() => handleSetSideDrain(sideDrainLen + step)}
+                        onClick={() => {
+                          void captureLocationForInput('sideDrain', 'Road Side Drain', `${sideDrainLen + step} ${items.sideDrain.unit}`);
+                          handleSetSideDrain(sideDrainLen + step);
+                        }}
                         className="min-h-[44px] py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl tabular-nums whitespace-nowrap active:scale-[0.97] transition duration-150"
                       >
                         +{step}{items.sideDrain.unit}
                       </button>
                     ))}
                   </div>
+                  {renderCapturedPinHint('sideDrain')}
                 </div>
               )}
             </div>
@@ -1366,7 +1770,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
           {/* Custom Necessary Items */}
           {enabledCustomItems.map((item) => (
-            <div key={item.id} className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 flex flex-col gap-4 transition-all">
+            <div key={item.id} className={getCardContainerClass(item.id)}>
               {renderCardHeader(
                 item.id,
                 item.name,
@@ -1380,7 +1784,11 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   <div className="flex items-center justify-between bg-slate-50/90 p-3.5 rounded-xl">
                     <button
                       type="button"
-                      onClick={() => handleSetCustomItemQty(item.id, item.quantity - (item.quickSteps[0] || 1))}
+                      onClick={() => {
+                        const nextVal = Math.max(0, item.quantity - (item.quickSteps[0] || 1));
+                        void captureLocationForInput(`custom:${item.id}`, item.name, `${nextVal} ${item.unit}`);
+                        handleSetCustomItemQty(item.id, nextVal);
+                      }}
                       aria-label={`Decrease ${item.name}`}
                       className="w-12 h-12 bg-white border border-slate-200 rounded-xl text-slate-700 hover:bg-red-50 hover:text-red-600 transition flex items-center justify-center active:scale-95"
                     >
@@ -1394,7 +1802,11 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleSetCustomItemQty(item.id, item.quantity + (item.quickSteps[0] || 1))}
+                      onClick={() => {
+                        const nextVal = item.quantity + (item.quickSteps[0] || 1);
+                        void captureLocationForInput(`custom:${item.id}`, item.name, `${nextVal} ${item.unit}`);
+                        handleSetCustomItemQty(item.id, nextVal);
+                      }}
                       aria-label={`Increase ${item.name}`}
                       className="w-12 h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition flex items-center justify-center active:scale-95"
                     >
@@ -1408,6 +1820,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                     step="any"
                     min="0"
                     value={item.quantity}
+                    onFocus={() => void captureLocationForInput(`custom:${item.id}`, item.name, `${item.quantity} ${item.unit}`)}
+                    onClick={() => void captureLocationForInput(`custom:${item.id}`, item.name, `${item.quantity} ${item.unit}`)}
                     onChange={(e) => handleSetCustomItemQty(item.id, parseFloat(e.target.value) || 0)}
                     className={inputClass}
                   />
@@ -1418,7 +1832,11 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         <button
                           key={step}
                           type="button"
-                          onClick={() => handleSetCustomItemQty(item.id, item.quantity + step)}
+                          onClick={() => {
+                            const nextVal = item.quantity + step;
+                            void captureLocationForInput(`custom:${item.id}`, item.name, `${nextVal} ${item.unit}`);
+                            handleSetCustomItemQty(item.id, nextVal);
+                          }}
                           className="min-h-[44px] py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl tabular-nums active:scale-[0.97] transition duration-150"
                         >
                           +{step} {item.unit}
@@ -1426,6 +1844,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                       ))}
                     </div>
                   )}
+                  {renderCapturedPinHint(`custom:${item.id}`)}
                 </div>
               )}
             </div>

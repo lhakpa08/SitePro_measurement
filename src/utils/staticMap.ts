@@ -1,4 +1,4 @@
-import { ConstructionProject, FencePostEntry, GpsCoordinate } from '../types';
+import { ConstructionProject, FencePostEntry, GpsCoordinate, InputLocationPoint } from '../types';
 
 export type StaticMapScope = 'all' | 'road' | 'fencing';
 export type ReportMapType = 'hybrid' | 'satellite' | 'roadmap' | 'terrain';
@@ -12,6 +12,7 @@ export interface ProjectMapSummary {
   roadStart?: GpsCoordinate;
   roadEnd?: GpsCoordinate;
   gpsPosts: Array<FencePostEntry & { gps: GpsCoordinate }>;
+  inputLocations: InputLocationPoint[];
   allPoints: GpsCoordinate[];
   hasAnyCoordinates: boolean;
 }
@@ -30,17 +31,39 @@ export function getProjectMapData(
         )
       : [];
 
+  const customCategoryMap = new Map(
+    (project.settings?.customItems ?? []).map((c) => [`custom:${c.id}`, c.category])
+  );
+  const rawInputLocs = project.inputLocations ?? [];
+  const inputLocations = rawInputLocs.filter((loc) => {
+    if (loc.fieldKey.startsWith('custom:')) {
+      const cat = customCategoryMap.get(loc.fieldKey);
+      if (scope === 'fencing') return cat === 'fencing' || !cat;
+      if (scope === 'road') return cat === 'road' || cat === 'general' || !cat;
+      return true;
+    }
+    if (scope === 'fencing') {
+      return !['roadMeasurement', 'sideDrain'].includes(loc.fieldKey);
+    }
+    if (scope === 'road') {
+      return ['roadMeasurement', 'sideDrain', 'auditNotes'].includes(loc.fieldKey);
+    }
+    return true;
+  });
+
   const allPoints: GpsCoordinate[] = [];
   if (sitePin) allPoints.push(sitePin);
   if (roadStart) allPoints.push(roadStart);
   if (roadEnd) allPoints.push(roadEnd);
   gpsPosts.forEach((p) => allPoints.push(p.gps));
+  inputLocations.forEach((l) => allPoints.push(l.gps));
 
   return {
     sitePin,
     roadStart,
     roadEnd,
     gpsPosts,
+    inputLocations,
     allPoints,
     hasAnyCoordinates: allPoints.length > 0,
   };
@@ -69,6 +92,7 @@ export function buildSiteStaticMapUrl(
     mapType?: ReportMapType;
     size?: string;
     scale?: 1 | 2;
+    liveGps?: GpsCoordinate;
   }
 ): string {
   const apiKey = getGoogleMapsApiKey();
@@ -78,8 +102,10 @@ export function buildSiteStaticMapUrl(
   const mapType = options?.mapType ?? 'hybrid';
   const size = options?.size ?? '640x360';
   const scale = options?.scale ?? 2;
+  const liveGps = options?.liveGps;
 
   const data = getProjectMapData(project, scope);
+  const hasAny = data.hasAnyCoordinates || Boolean(liveGps);
   const params = new URLSearchParams({
     size,
     scale: String(scale),
@@ -89,7 +115,7 @@ export function buildSiteStaticMapUrl(
     solution_id: 'gmp_mcp_codeassist_v1_aistudio',
   });
 
-  if (data.hasAnyCoordinates) {
+  if (hasAny) {
     if (data.sitePin) {
       params.append('markers', `color:red|label:S|${formatCoord(data.sitePin)}`);
     }
@@ -118,9 +144,21 @@ export function buildSiteStaticMapUrl(
       }
     }
 
+    if (data.inputLocations.length > 0) {
+      const sampledInputs = samplePoints(data.inputLocations, 15);
+      const inputLocs = sampledInputs.map((l) => formatCoord(l.gps));
+      params.append('markers', `size:small|color:purple|label:I|${inputLocs.join('|')}`);
+    }
+
+    if (liveGps) {
+      params.append('markers', `size:small|color:blue|label:G|${formatCoord(liveGps)}`);
+    }
+
+    const totalPts = data.allPoints.length + (liveGps ? 1 : 0);
     // Single-point zoom so Static Maps frames the site rather than zooming out too far
-    if (data.allPoints.length === 1) {
-      params.set('center', formatCoord(data.allPoints[0]));
+    if (totalPts === 1) {
+      const onlyPt = data.allPoints[0] ?? liveGps!;
+      params.set('center', formatCoord(onlyPt));
       params.set('zoom', '17');
     }
 

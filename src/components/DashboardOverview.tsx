@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ConstructionProject } from '../types';
-import { getProjectSettings, formatChainage } from '../utils/geo';
+import { getProjectSettings } from '../utils/geo';
+import { computeMeasurements } from '../utils/calculations';
 import { exportProjectToExcel, exportProjectToPdf, exportChainLinkPdf, exportRoadPdf } from '../utils/export';
+import { StaticMapScope } from '../utils/staticMap';
 import { AuditorVerificationModule } from './AuditorVerificationModule';
 import { SiteReportMap } from './SiteReportMap';
 import { 
@@ -17,7 +19,9 @@ import {
   AlertTriangle,
   Clock,
   ChevronDown,
-  MapPin
+  MapPin,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 
 interface DashboardOverviewProps {
@@ -25,6 +29,7 @@ interface DashboardOverviewProps {
   setActiveTab: (tab: 'audit' | 'overview') => void;
   onUpdateProject: (updated: ConstructionProject) => void;
   onOpenSettings: () => void;
+  onOpenReport?: (scope?: StaticMapScope) => void;
   currentGps?: { lat: number; lng: number; accuracy?: number };
 }
 
@@ -33,6 +38,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   setActiveTab,
   onUpdateProject,
   onOpenSettings,
+  onOpenReport,
   currentGps,
 }) => {
   const settings = getProjectSettings(project);
@@ -42,44 +48,63 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const lengthUnit = settings.unitSystem === 'imperial' ? 'ft' : 'm';
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [fullscreenSectionId, setFullscreenSectionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFullscreenSectionId(null);
+  }, [project.id]);
+
+  useEffect(() => {
+    if (!fullscreenSectionId) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setFullscreenSectionId(null);
+      }
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [fullscreenSectionId]);
+
+  const isSectionCollapsed = (key: string) => collapsedSections[key] !== false;
   const toggleSection = (key: string) => {
-    setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
+    setCollapsedSections(prev => ({ ...prev, [key]: prev[key] === false }));
   };
 
-  // Fencing Calculations
-  const totalAnglePosts = project.fencePosts.filter(p => p.postType === 'angle_post').length;
-  const totalIntermediatePosts = project.fencePosts.filter(p => p.postType === 'intermediate_post').length;
-  const totalStrutPosts = project.fencePosts.filter(p => p.postType === 'strut_post').length;
-  const totalGatePosts = project.fencePosts.filter(p => p.postType === 'gate_post').length;
-  const totalPostsCount =
-    (items.anglePosts.enabled ? totalAnglePosts : 0) +
-    (items.intermediatePosts.enabled ? totalIntermediatePosts : 0) +
-    (items.strutPosts.enabled ? totalStrutPosts : 0) +
-    (items.gatePosts.enabled ? totalGatePosts : 0);
+  const toggleFullScreen = (key: string) => {
+    setFullscreenSectionId(prev => {
+      if (prev === key) return null;
+      setCollapsedSections(c => ({ ...c, [key]: false }));
+      return key;
+    });
+  };
 
-  const postUnit = items.anglePosts.unit || items.intermediatePosts.unit || 'pcs';
+  const getSectionClass = (key: string, baseClass: string) =>
+    fullscreenSectionId === key
+      ? 'fixed inset-0 z-[45] bg-white p-5 sm:p-8 overflow-y-auto transition-all'
+      : `${baseClass} transition-all`;
 
-  const totalMeshLength = project.fenceMeshSegments.reduce((acc, curr) => acc + curr.lengthMeters, 0);
-  const totalRrmVolume = project.rrmWalls.reduce((acc, curr) => {
-    const topW = (curr.topWidthEntries && curr.topWidthEntries.length > 0) ? curr.topWidthEntries.reduce((a, b) => a + b, 0) / curr.topWidthEntries.length : curr.topWidthMeters;
-    const botW = (curr.bottomWidthEntries && curr.bottomWidthEntries.length > 0) ? curr.bottomWidthEntries.reduce((a, b) => a + b, 0) / curr.bottomWidthEntries.length : curr.bottomWidthMeters;
-    const h = (curr.heightEntries && curr.heightEntries.length > 0) ? curr.heightEntries.reduce((a, b) => a + b, 0) / curr.heightEntries.length : curr.heightMeters;
-    const avgWidth = (topW + botW) / 2;
-    return acc + (curr.lengthMeters * h * avgWidth);
-  }, 0);
+  const m = computeMeasurements(project);
+  const totalAnglePosts = m.totalAngle;
+  const totalIntermediatePosts = m.totalIntermed;
+  const totalStrutPosts = m.totalStrut;
+  const totalGatePosts = m.totalGate;
+  const totalPostsCount = m.totalPosts;
+  const postUnit = m.postUnit;
 
-  // Road Totals
-  const totalRoadLength = project.roadSections.reduce((acc, curr) => acc + curr.lengthMeters, 0);
-  const roadChainageStart = project.roadSections[0]?.chainageStart || '0+000';
-  const roadChainageEnd = project.roadSections[0]?.chainageEnd || formatChainage(totalRoadLength);
-  const roadSec0 = project.roadSections[0];
-  const roadWidthEntries = roadSec0?.widthEntries ?? [roadSec0?.widthMeters ?? settings.defaultRoadWidth];
-  const roadWidth = roadWidthEntries.length > 0 ? roadWidthEntries.reduce((a, b) => a + b, 0) / roadWidthEntries.length : (roadSec0?.widthMeters ?? settings.defaultRoadWidth);
-  const totalRoadArea = project.roadSections.reduce((acc, curr) => {
-    const w = (curr.widthEntries && curr.widthEntries.length > 0) ? curr.widthEntries.reduce((a, b) => a + b, 0) / curr.widthEntries.length : curr.widthMeters;
-    return acc + (curr.lengthMeters * w);
-  }, 0);
-  const totalSideDrain = project.roadSections.reduce((acc, curr) => acc + (curr.sideDrainLengthMeters || 0), 0);
+  const totalMeshLength = m.meshLen;
+  const totalRrmVolume = m.rrmVol;
+
+  const totalRoadLength = m.roadLen;
+  const roadChainageStart = m.chainageStart;
+  const roadChainageEnd = m.chainageEnd;
+  const roadWidth = m.roadWidth;
+  const totalRoadArea = m.roadArea;
+  const totalSideDrain = m.sideDrainLen;
 
   const auditStatus = project.auditInfo?.auditStatus || 'pending';
 
@@ -96,56 +121,97 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     <div className="space-y-4 sm:space-y-6 pb-4">
       
       {/* Overview Header Card */}
-      <div className="bg-white rounded-2xl p-4 sm:p-8 border border-slate-200/90 flex flex-col lg:flex-row lg:items-center justify-between gap-5 sm:gap-6">
-        <div className="max-w-2xl">
-          <div className="text-xs font-semibold text-indigo-600 mb-1">
-            Site Overview &middot; Audit Summary
+      <div className={getSectionClass('overviewHeader', 'bg-white rounded-2xl p-4 sm:p-8 border border-slate-200/90')}>
+        <div className="flex flex-col gap-5 sm:gap-6">
+          <div className="flex items-start justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => toggleSection('overviewHeader')}
+              aria-expanded={!isSectionCollapsed('overviewHeader')}
+              className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xl"
+            >
+              <div className="text-xs font-semibold text-indigo-600 mb-1">
+                Site Overview &middot; Audit Summary
+              </div>
+              <h2 className="text-xl sm:text-3xl font-extrabold tracking-tight text-slate-900 group-hover:text-slate-700 transition">
+                {project.name}
+              </h2>
+              {!isSectionCollapsed('overviewHeader') && (
+                <p className="text-slate-600 text-xs sm:text-sm leading-relaxed mt-1.5 sm:mt-2 max-w-2xl">
+                  Review measured quantities across fencing and road works, sign off physical site verification, or customize predetermined units and necessary items.
+                </p>
+              )}
+            </button>
+
+            <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+              <button
+                type="button"
+                onClick={() => toggleFullScreen('overviewHeader')}
+                aria-label={fullscreenSectionId === 'overviewHeader' ? 'Exit full screen for Site Overview' : 'Extend Site Overview to full screen'}
+                aria-pressed={fullscreenSectionId === 'overviewHeader'}
+                title={fullscreenSectionId === 'overviewHeader' ? 'Restore card size (Esc)' : 'Extend to full screen'}
+                className={`w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition ${
+                  fullscreenSectionId === 'overviewHeader'
+                    ? 'bg-slate-900 text-white hover:bg-slate-800'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                {fullscreenSectionId === 'overviewHeader' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleSection('overviewHeader')}
+                aria-expanded={!isSectionCollapsed('overviewHeader')}
+                aria-label="Toggle Site Overview"
+                className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition"
+              >
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('overviewHeader') ? '-rotate-90' : 'rotate-0'}`}
+                />
+              </button>
+            </div>
           </div>
-          <h2 className="text-xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
-            {project.name}
-          </h2>
-          <p className="text-slate-600 text-xs sm:text-sm leading-relaxed mt-1.5 sm:mt-2">
-            Review measured quantities across fencing and road works, sign off physical site verification, or customize predetermined units and necessary items.
-          </p>
-        </div>
 
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab('audit')}
-            className="min-h-[44px] px-4 sm:px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Open Auditor</span>
-            <ArrowRight className="w-4 h-4 hidden sm:inline" />
-          </button>
+          {!isSectionCollapsed('overviewHeader') && (
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('audit')}
+                className="min-h-[44px] px-4 sm:px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Open Auditor</span>
+                <ArrowRight className="w-4 h-4 hidden sm:inline" />
+              </button>
 
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="min-h-[44px] px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
-          >
-            <Settings className="w-4 h-4" />
-            <span>Units &amp; Items</span>
-          </button>
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="min-h-[44px] px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+              >
+                <Settings className="w-4 h-4" />
+                <span>Units &amp; Items</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => exportProjectToPdf(project)}
-            className="min-h-[44px] px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
-          >
-            <Download className="w-4 h-4" />
-            <span>Export PDF</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => (onOpenReport ? onOpenReport('all') : exportProjectToPdf(project, currentGps))}
+                className="min-h-[44px] px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export PDF</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => exportProjectToExcel(project)}
-            className="min-h-[44px] px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span>Excel</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => exportProjectToExcel(project)}
+                className="min-h-[44px] px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Excel</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -185,10 +251,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums mb-1">
-            {totalMeshLength.toLocaleString()} <span className="text-xs sm:text-sm font-medium text-slate-500">{items.chainLinkMesh.unit}</span>
+            {totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-xs sm:text-sm font-medium text-slate-500">{items.chainLinkMesh.unit}</span>
           </div>
           <div className="text-[11px] sm:text-xs text-slate-500 truncate tabular-nums">
-            RRM &middot; <span className="font-semibold text-slate-700">{totalRrmVolume.toFixed(1)} {items.rrmWall.unit}</span>
+            RRM &middot; <span className="font-semibold text-slate-700">{totalRrmVolume.toFixed(2)} {items.rrmWall.unit}</span>
           </div>
         </button>
 
@@ -205,10 +271,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums mb-1">
-            {totalRoadLength.toLocaleString()} <span className="text-xs sm:text-sm font-medium text-slate-500">{items.roadMeasurement.unit}</span>
+            {totalRoadLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-xs sm:text-sm font-medium text-slate-500">{items.roadMeasurement.unit}</span>
           </div>
           <div className="text-[11px] sm:text-xs text-slate-500 truncate tabular-nums">
-            Ch. <span className="font-mono font-semibold text-slate-700">{roadChainageStart}–{roadChainageEnd}</span> &middot; {totalRoadArea.toLocaleString()} {areaUnit}
+            Ch. <span className="font-mono font-semibold text-slate-700">{roadChainageStart}–{roadChainageEnd}</span> &middot; {totalRoadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} {areaUnit}
           </div>
         </button>
 
@@ -250,13 +316,13 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
         
         {/* Chain-Link Fence Material Breakdown */}
-        <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90">
+        <div className={getSectionClass('fencingBreakdown', 'bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90')}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2">
             <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
               <button
                 type="button"
                 onClick={() => toggleSection('fencingBreakdown')}
-                aria-expanded={!collapsedSections.fencingBreakdown}
+                aria-expanded={!isSectionCollapsed('fencingBreakdown')}
                 className="flex items-center gap-3 text-left min-w-0 flex-1 group"
               >
                 <div className="p-2 bg-amber-50 text-amber-700 rounded-xl flex-shrink-0">
@@ -266,31 +332,46 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
                     Chain-Link &amp; Fencing Breakdown
                   </h3>
-                  {collapsedSections.fencingBreakdown && (
+                  {isSectionCollapsed('fencingBreakdown') && (
                     <p className="text-xs text-slate-500 tabular-nums truncate">
-                      {totalPostsCount} {postUnit} &middot; {totalMeshLength.toLocaleString()} {items.chainLinkMesh.unit} mesh &middot; {totalRrmVolume.toFixed(1)} {items.rrmWall.unit} RRM
+                      {totalPostsCount} {postUnit} &middot; {totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.chainLinkMesh.unit} mesh &middot; {totalRrmVolume.toFixed(2)} {items.rrmWall.unit} RRM
                     </p>
                   )}
                 </div>
               </button>
 
-              <button
-                type="button"
-                onClick={() => toggleSection('fencingBreakdown')}
-                aria-expanded={!collapsedSections.fencingBreakdown}
-                aria-label="Toggle Chain-Link & Fencing Breakdown"
-                className="sm:hidden w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
-              >
-                <ChevronDown
-                  className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.fencingBreakdown ? '-rotate-90' : 'rotate-0'}`}
-                />
-              </button>
+              <div className="sm:hidden flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => toggleFullScreen('fencingBreakdown')}
+                  aria-label={fullscreenSectionId === 'fencingBreakdown' ? 'Exit full screen for Chain-Link & Fencing Breakdown' : 'Extend Chain-Link & Fencing Breakdown to full screen'}
+                  aria-pressed={fullscreenSectionId === 'fencingBreakdown'}
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center transition ${
+                    fullscreenSectionId === 'fencingBreakdown'
+                      ? 'bg-slate-900 text-white hover:bg-slate-800'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {fullscreenSectionId === 'fencingBreakdown' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleSection('fencingBreakdown')}
+                  aria-expanded={!isSectionCollapsed('fencingBreakdown')}
+                  aria-label="Toggle Chain-Link & Fencing Breakdown"
+                  className="w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('fencingBreakdown') ? '-rotate-90' : 'rotate-0'}`}
+                  />
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0 pl-11 sm:pl-0">
               <button
                 type="button"
-                onClick={() => exportChainLinkPdf(project)}
+                onClick={() => (onOpenReport ? onOpenReport('fencing') : exportChainLinkPdf(project, currentGps))}
                 className="min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
               >
                 PDF
@@ -305,19 +386,33 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => toggleFullScreen('fencingBreakdown')}
+                aria-label={fullscreenSectionId === 'fencingBreakdown' ? 'Exit full screen for Chain-Link & Fencing Breakdown' : 'Extend Chain-Link & Fencing Breakdown to full screen'}
+                aria-pressed={fullscreenSectionId === 'fencingBreakdown'}
+                title={fullscreenSectionId === 'fencingBreakdown' ? 'Restore card size (Esc)' : 'Extend to full screen'}
+                className={`hidden sm:flex w-8 h-8 rounded-lg items-center justify-center transition ${
+                  fullscreenSectionId === 'fencingBreakdown'
+                    ? 'bg-slate-900 text-white hover:bg-slate-800'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                {fullscreenSectionId === 'fencingBreakdown' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
                 onClick={() => toggleSection('fencingBreakdown')}
-                aria-expanded={!collapsedSections.fencingBreakdown}
+                aria-expanded={!isSectionCollapsed('fencingBreakdown')}
                 aria-label="Toggle Chain-Link & Fencing Breakdown"
                 className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 items-center justify-center transition"
               >
                 <ChevronDown
-                  className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.fencingBreakdown ? '-rotate-90' : 'rotate-0'}`}
+                  className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('fencingBreakdown') ? '-rotate-90' : 'rotate-0'}`}
                 />
               </button>
             </div>
           </div>
 
-          {!collapsedSections.fencingBreakdown && (
+          {!isSectionCollapsed('fencingBreakdown') && (
             <div className="divide-y divide-slate-100 mt-4">
               {items.anglePosts.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
@@ -346,7 +441,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               {items.chainLinkMesh.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
                   <span className="text-slate-600">Chain-Link Mesh Length</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{totalMeshLength.toLocaleString()} {items.chainLinkMesh.unit}</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.chainLinkMesh.unit}</span>
                 </div>
               )}
               {items.rrmWall.enabled && (
@@ -366,13 +461,13 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         {/* Road Construction & General Items Breakdown */}
-        <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90">
+        <div className={getSectionClass('roadBreakdown', 'bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90')}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2">
             <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
               <button
                 type="button"
                 onClick={() => toggleSection('roadBreakdown')}
-                aria-expanded={!collapsedSections.roadBreakdown}
+                aria-expanded={!isSectionCollapsed('roadBreakdown')}
                 className="flex items-center gap-3 text-left min-w-0 flex-1 group"
               >
                 <div className="p-2 bg-emerald-50 text-emerald-700 rounded-xl flex-shrink-0">
@@ -382,31 +477,46 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
                     Road &amp; Additional Site Items
                   </h3>
-                  {collapsedSections.roadBreakdown && (
+                  {isSectionCollapsed('roadBreakdown') && (
                     <p className="text-xs text-slate-500 tabular-nums truncate">
-                      Ch. {roadChainageStart}–{roadChainageEnd} &middot; {totalRoadLength.toLocaleString()} {items.roadMeasurement.unit} &middot; {totalRoadArea.toLocaleString()} {areaUnit} &middot; Drain: {totalSideDrain.toLocaleString()} {items.sideDrain.unit}
+                      Ch. {roadChainageStart}–{roadChainageEnd} &middot; {totalRoadLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.roadMeasurement.unit} &middot; {totalRoadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} {areaUnit} &middot; Drain: {totalSideDrain.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.sideDrain.unit}
                     </p>
                   )}
                 </div>
               </button>
 
-              <button
-                type="button"
-                onClick={() => toggleSection('roadBreakdown')}
-                aria-expanded={!collapsedSections.roadBreakdown}
-                aria-label="Toggle Road & Additional Site Items"
-                className="sm:hidden w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
-              >
-                <ChevronDown
-                  className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.roadBreakdown ? '-rotate-90' : 'rotate-0'}`}
-                />
-              </button>
+              <div className="sm:hidden flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => toggleFullScreen('roadBreakdown')}
+                  aria-label={fullscreenSectionId === 'roadBreakdown' ? 'Exit full screen for Road & Additional Site Items' : 'Extend Road & Additional Site Items to full screen'}
+                  aria-pressed={fullscreenSectionId === 'roadBreakdown'}
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center transition ${
+                    fullscreenSectionId === 'roadBreakdown'
+                      ? 'bg-slate-900 text-white hover:bg-slate-800'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {fullscreenSectionId === 'roadBreakdown' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleSection('roadBreakdown')}
+                  aria-expanded={!isSectionCollapsed('roadBreakdown')}
+                  aria-label="Toggle Road & Additional Site Items"
+                  className="w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('roadBreakdown') ? '-rotate-90' : 'rotate-0'}`}
+                  />
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0 pl-11 sm:pl-0">
               <button
                 type="button"
-                onClick={() => exportRoadPdf(project)}
+                onClick={() => (onOpenReport ? onOpenReport('road') : exportRoadPdf(project, currentGps))}
                 className="min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
               >
                 PDF
@@ -421,19 +531,33 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => toggleFullScreen('roadBreakdown')}
+                aria-label={fullscreenSectionId === 'roadBreakdown' ? 'Exit full screen for Road & Additional Site Items' : 'Extend Road & Additional Site Items to full screen'}
+                aria-pressed={fullscreenSectionId === 'roadBreakdown'}
+                title={fullscreenSectionId === 'roadBreakdown' ? 'Restore card size (Esc)' : 'Extend to full screen'}
+                className={`hidden sm:flex w-8 h-8 rounded-lg items-center justify-center transition ${
+                  fullscreenSectionId === 'roadBreakdown'
+                    ? 'bg-slate-900 text-white hover:bg-slate-800'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                {fullscreenSectionId === 'roadBreakdown' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+              <button
+                type="button"
                 onClick={() => toggleSection('roadBreakdown')}
-                aria-expanded={!collapsedSections.roadBreakdown}
+                aria-expanded={!isSectionCollapsed('roadBreakdown')}
                 aria-label="Toggle Road & Additional Site Items"
                 className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 items-center justify-center transition"
               >
                 <ChevronDown
-                  className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.roadBreakdown ? '-rotate-90' : 'rotate-0'}`}
+                  className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('roadBreakdown') ? '-rotate-90' : 'rotate-0'}`}
                 />
               </button>
             </div>
           </div>
 
-          {!collapsedSections.roadBreakdown && (
+          {!isSectionCollapsed('roadBreakdown') && (
             <div className="divide-y divide-slate-100 mt-4">
               {items.roadMeasurement.enabled && (
                 <>
@@ -443,7 +567,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   </div>
                   <div className="flex justify-between items-center py-2.5 text-sm">
                     <span className="text-slate-600">Road Alignment Length</span>
-                    <span className="font-bold text-slate-900 tabular-nums">{totalRoadLength.toLocaleString()} {items.roadMeasurement.unit}</span>
+                    <span className="font-bold text-slate-900 tabular-nums">{totalRoadLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.roadMeasurement.unit}</span>
                   </div>
                   <div className="flex justify-between items-center py-2.5 text-sm">
                     <span className="text-slate-600">Road Breadth / Width</span>
@@ -451,14 +575,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   </div>
                   <div className="flex justify-between items-center py-2.5 text-sm">
                     <span className="text-slate-600">Total Road Surface Area</span>
-                    <span className="font-bold text-emerald-700 tabular-nums">{totalRoadArea.toLocaleString()} {areaUnit}</span>
+                    <span className="font-bold text-emerald-700 tabular-nums">{totalRoadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} {areaUnit}</span>
                   </div>
                 </>
               )}
               {items.sideDrain.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
                   <span className="text-slate-600">Road Side Drain Length</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{totalSideDrain.toLocaleString()} {items.sideDrain.unit}</span>
+                  <span className="font-bold text-slate-900 tabular-nums">{totalSideDrain.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.sideDrain.unit}</span>
                 </div>
               )}
               {roadAndGeneralCustom.map((c) => (
@@ -474,12 +598,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       </div>
 
       {/* Site Location & Accurate Report Map */}
-      <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90">
+      <div className={getSectionClass('reportMap', 'bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90')}>
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={() => toggleSection('reportMap')}
-            aria-expanded={!collapsedSections.reportMap}
+            aria-expanded={!isSectionCollapsed('reportMap')}
             className="flex items-center gap-3 text-left min-w-0 flex-1 group"
           >
             <div className="p-2 bg-rose-50 text-rose-600 rounded-xl flex-shrink-0">
@@ -499,20 +623,36 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </div>
           </button>
 
-          <button
-            type="button"
-            onClick={() => toggleSection('reportMap')}
-            aria-expanded={!collapsedSections.reportMap}
-            aria-label="Toggle Site Location & Accurate Report Map"
-            className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
-          >
-            <ChevronDown
-              className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.reportMap ? '-rotate-90' : 'rotate-0'}`}
-            />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => toggleFullScreen('reportMap')}
+              aria-label={fullscreenSectionId === 'reportMap' ? 'Exit full screen for Site Location & Accurate Report Map' : 'Extend Site Location & Accurate Report Map to full screen'}
+              aria-pressed={fullscreenSectionId === 'reportMap'}
+              title={fullscreenSectionId === 'reportMap' ? 'Restore card size (Esc)' : 'Extend to full screen'}
+              className={`w-10 h-10 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition ${
+                fullscreenSectionId === 'reportMap'
+                  ? 'bg-slate-900 text-white hover:bg-slate-800'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+              }`}
+            >
+              {fullscreenSectionId === 'reportMap' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleSection('reportMap')}
+              aria-expanded={!isSectionCollapsed('reportMap')}
+              aria-label="Toggle Site Location & Accurate Report Map"
+              className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
+            >
+              <ChevronDown
+                className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('reportMap') ? '-rotate-90' : 'rotate-0'}`}
+              />
+            </button>
+          </div>
         </div>
 
-        {!collapsedSections.reportMap && (
+        {!isSectionCollapsed('reportMap') && (
           <div className="mt-4">
             <SiteReportMap
               project={project}
@@ -524,25 +664,50 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       </div>
 
       {/* Auditor Verification & Inspection Section on Overview */}
-      <div className="pt-1 space-y-3">
-        <button
-          type="button"
-          onClick={() => toggleSection('auditorRecord')}
-          aria-expanded={!collapsedSections.auditorRecord}
-          className="w-full min-h-[44px] flex items-center justify-between gap-2 text-slate-700 hover:text-slate-900 text-xs font-bold py-1 group"
-        >
-          <span className="inline-flex items-center gap-2 text-left">
-            <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
-            <span>Auditor Verification &amp; Site Inspection Record</span>
-          </span>
-          <span className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg bg-white border border-slate-200 group-hover:bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 transition">
-            <ChevronDown
-              className={`w-4 h-4 transition-transform duration-200 ${collapsedSections.auditorRecord ? '-rotate-90' : 'rotate-0'}`}
-            />
-          </span>
-        </button>
+      <div className={getSectionClass('auditorRecord', 'pt-1 space-y-3')}>
+        <div className="w-full flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => toggleSection('auditorRecord')}
+            aria-expanded={!isSectionCollapsed('auditorRecord')}
+            className="min-h-[44px] flex-1 flex items-center justify-between gap-2 text-slate-700 hover:text-slate-900 text-xs font-bold py-1 group text-left"
+          >
+            <span className="inline-flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>Auditor Verification &amp; Site Inspection Record</span>
+            </span>
+          </button>
 
-        {!collapsedSections.auditorRecord && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => toggleFullScreen('auditorRecord')}
+              aria-label={fullscreenSectionId === 'auditorRecord' ? 'Exit full screen for Auditor Verification' : 'Extend Auditor Verification to full screen'}
+              aria-pressed={fullscreenSectionId === 'auditorRecord'}
+              title={fullscreenSectionId === 'auditorRecord' ? 'Restore card size (Esc)' : 'Extend to full screen'}
+              className={`w-9 h-9 sm:w-7 sm:h-7 rounded-lg border flex items-center justify-center transition ${
+                fullscreenSectionId === 'auditorRecord'
+                  ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800'
+                  : 'bg-white border-slate-200 hover:bg-slate-100 text-slate-600'
+              }`}
+            >
+              {fullscreenSectionId === 'auditorRecord' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleSection('auditorRecord')}
+              aria-expanded={!isSectionCollapsed('auditorRecord')}
+              aria-label="Toggle Auditor Verification & Site Inspection Record"
+              className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 transition"
+            >
+              <ChevronDown
+                className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('auditorRecord') ? '-rotate-90' : 'rotate-0'}`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {!isSectionCollapsed('auditorRecord') && (
           <AuditorVerificationModule
             key={project.id}
             project={project}
