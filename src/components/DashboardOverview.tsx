@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { ConstructionProject } from '../types';
 import { getProjectSettings } from '../utils/geo';
-import { computeMeasurements } from '../utils/calculations';
+import { computeMeasurements, computeEntityAuditComparisons } from '../utils/calculations';
 import { exportProjectToExcel, exportProjectToPdf, exportChainLinkPdf, exportRoadPdf } from '../utils/export';
 import { StaticMapScope } from '../utils/staticMap';
 import { AuditorVerificationModule } from './AuditorVerificationModule';
+import { EntityComparisonModule } from './EntityComparisonModule';
 import { SiteReportMap } from './SiteReportMap';
 import { 
   Fence, 
@@ -21,13 +22,18 @@ import {
   ChevronDown,
   MapPin,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Scale
 } from 'lucide-react';
 
 interface DashboardOverviewProps {
   project: ConstructionProject;
   setActiveTab: (tab: 'audit' | 'overview') => void;
   onUpdateProject: (updated: ConstructionProject) => void;
+  onPatchProject?: (
+    projectId: string,
+    updater: (latest: ConstructionProject) => ConstructionProject
+  ) => void;
   onOpenSettings: () => void;
   onOpenReport?: (scope?: StaticMapScope) => void;
   currentGps?: { lat: number; lng: number; accuracy?: number };
@@ -37,6 +43,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   project,
   setActiveTab,
   onUpdateProject,
+  onPatchProject,
   onOpenSettings,
   onOpenReport,
   currentGps,
@@ -662,6 +669,78 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Entity Measurements vs. Audit Verification Section */}
+      {(() => {
+        const entityComparisons = computeEntityAuditComparisons(project, 'all');
+        const excessCount = entityComparisons.filter(r => r.status === 'excess' || (r.status as string) === 'shortfall').length;
+        const underpaymentCount = entityComparisons.filter(r => r.status === 'underpayment').length;
+        const matchedCount = entityComparisons.filter(r => r.status === 'matched').length;
+        return (
+          <div className={getSectionClass('entityComparison', 'bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90')}>
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => toggleSection('entityComparison')}
+                aria-expanded={!isSectionCollapsed('entityComparison')}
+                className="flex items-center gap-3 text-left min-w-0 flex-1 group"
+              >
+                <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl flex-shrink-0">
+                  <Scale className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
+                    Entity Measurements vs. Audit Verification &amp; Variances
+                  </h3>
+                  <p className="text-xs text-slate-500 truncate mt-0.5 tabular-nums">
+                    {entityComparisons.length === 0
+                      ? 'Add entity-claimed Nos, Length, Width & Thickness to compare against audit verification'
+                      : `${entityComparisons.length} item${entityComparisons.length === 1 ? '' : 's'} · ${matchedCount} matched · ${excessCount} excess${underpaymentCount > 0 ? ` · ${underpaymentCount} underpayment` : ''}`}
+                  </p>
+                </div>
+              </button>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => toggleFullScreen('entityComparison')}
+                  aria-label={fullscreenSectionId === 'entityComparison' ? 'Exit full screen for Entity Comparison' : 'Extend Entity Comparison to full screen'}
+                  aria-pressed={fullscreenSectionId === 'entityComparison'}
+                  title={fullscreenSectionId === 'entityComparison' ? 'Restore card size (Esc)' : 'Extend to full screen'}
+                  className={`w-10 h-10 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition ${
+                    fullscreenSectionId === 'entityComparison'
+                      ? 'bg-slate-900 text-white hover:bg-slate-800'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {fullscreenSectionId === 'entityComparison' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleSection('entityComparison')}
+                  aria-expanded={!isSectionCollapsed('entityComparison')}
+                  aria-label="Toggle Entity Measurements Comparison"
+                  className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('entityComparison') ? '-rotate-90' : 'rotate-0'}`}
+                  />
+                </button>
+              </div>
+            </div>
+
+            {!isSectionCollapsed('entityComparison') && (
+              <div className="mt-4">
+                <EntityComparisonModule
+                  project={project}
+                  onUpdateProject={onUpdateProject}
+                  onPatchProject={onPatchProject}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Auditor Verification & Inspection Section on Overview */}
       <div className={getSectionClass('auditorRecord', 'pt-1 space-y-3')}>

@@ -120,6 +120,44 @@ export interface ProjectSettings {
   customItems: CustomAuditItem[];
 }
 
+export type EntityComparisonTarget =
+  | 'angle_post'
+  | 'intermediate_post'
+  | 'strut_post'
+  | 'gate_post'
+  | 'total_posts'
+  | 'chainLinkMesh'
+  | 'rrmWall'
+  | 'roadMeasurement'
+  | 'sideDrain'
+  | 'custom'
+  | 'none';
+
+export type EntityCalcBasis = 'auto' | 'nos' | 'length' | 'area' | 'volume';
+
+export interface EntityMeasurementItem {
+  id: string;
+  itemName: string;
+  linkedTarget?: EntityComparisonTarget;
+  linkedCustomId?: string;
+  unit: string;
+  rate?: number; // Unit rate / price per unit (amount = quantity * rate)
+  // Entity claimed measurements
+  nos?: number;
+  length?: number;
+  width?: number;
+  thickness?: number;
+  calcBasis?: EntityCalcBasis;
+  // Audit verified measurements
+  auditNos?: number;
+  auditLength?: number;
+  auditWidth?: number;
+  auditThickness?: number;
+  verifiedOverride?: number;
+  remarks?: string;
+  updatedAt: number;
+}
+
 export interface ConstructionProject {
   id: string;
   name: string;
@@ -135,6 +173,8 @@ export interface ConstructionProject {
   inputLocations?: InputLocationPoint[];
   settings?: ProjectSettings;
   auditNotes?: string;
+  entityName?: string;
+  entityMeasurements?: EntityMeasurementItem[];
   auditInfo?: {
     auditorName: string;
     auditDate: string;

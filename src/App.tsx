@@ -343,6 +343,7 @@ export default function App() {
             project={project}
             setActiveTab={setActiveTab}
             onUpdateProject={handleUpdateProject}
+            onPatchProject={handlePatchProject}
             onOpenSettings={() => setIsSettingsOpen(true)}
             onOpenReport={(scope = 'all') => setExportReportState({ isOpen: true, scope })}
             currentGps={currentGps}

@@ -8,7 +8,10 @@ import {
 } from './staticMap';
 import {
   cleanVariance,
+  computeEntityAuditComparisons,
   computeMeasurements,
+  formatAuditDimensionsLabel,
+  formatEntityDimensionsLabel,
   formatVariance,
   ReportMeasurements,
   roundTo,
@@ -63,6 +66,183 @@ function getLatestFieldGps(project: ConstructionProject, fieldKey: string): GpsC
   return undefined;
 }
 
+export interface MeasuredSummaryRow {
+  category: string;
+  item: string;
+  details: string;
+  quantity: string;
+  unit: string;
+  capturedGps: string;
+}
+
+export function buildMeasuredSummaryRows(
+  project: ConstructionProject,
+  scope: StaticMapScope = 'all'
+): MeasuredSummaryRow[] {
+  const settings = getProjectSettings(project);
+  const { items, customItems } = settings;
+  const m = computeMeasurements(project, scope);
+  const rows: MeasuredSummaryRow[] = [];
+
+  if (scope !== 'road') {
+    if (items.anglePosts.enabled && m.totalAngle > 0) {
+      const gps =
+        project.fencePosts.filter((p) => p.postType === 'angle_post' && p.gps).slice(-1)[0]?.gps ||
+        getLatestFieldGps(project, 'angle_post');
+      rows.push({
+        category: 'Fencing',
+        item: 'Angle Post',
+        details: 'Physical post count',
+        quantity: String(m.totalAngle),
+        unit: items.anglePosts.unit,
+        capturedGps: formatGpsShort(gps),
+      });
+    }
+    if (items.intermediatePosts.enabled && m.totalIntermed > 0) {
+      const gps =
+        project.fencePosts.filter((p) => p.postType === 'intermediate_post' && p.gps).slice(-1)[0]?.gps ||
+        getLatestFieldGps(project, 'intermediate_post');
+      rows.push({
+        category: 'Fencing',
+        item: 'Intermediate Posts',
+        details: 'Physical post count',
+        quantity: String(m.totalIntermed),
+        unit: items.intermediatePosts.unit,
+        capturedGps: formatGpsShort(gps),
+      });
+    }
+    if (items.strutPosts.enabled && m.totalStrut > 0) {
+      const gps =
+        project.fencePosts.filter((p) => p.postType === 'strut_post' && p.gps).slice(-1)[0]?.gps ||
+        getLatestFieldGps(project, 'strut_post');
+      rows.push({
+        category: 'Fencing',
+        item: 'Strut Posts',
+        details: 'Physical post count',
+        quantity: String(m.totalStrut),
+        unit: items.strutPosts.unit,
+        capturedGps: formatGpsShort(gps),
+      });
+    }
+    if (items.gatePosts.enabled && m.totalGate > 0) {
+      const gps =
+        project.fencePosts.filter((p) => p.postType === 'gate_post' && p.gps).slice(-1)[0]?.gps ||
+        getLatestFieldGps(project, 'gate_post');
+      rows.push({
+        category: 'Fencing',
+        item: 'Gate Posts',
+        details: 'Physical post count',
+        quantity: String(m.totalGate),
+        unit: items.gatePosts.unit,
+        capturedGps: formatGpsShort(gps),
+      });
+    }
+    if (items.chainLinkMesh.enabled && m.meshLen > 0) {
+      const gps = project.fenceMeshSegments[0]?.gps || getLatestFieldGps(project, 'chainLinkMesh');
+      rows.push({
+        category: 'Fencing',
+        item: 'Chain-Link Mesh',
+        details: `L: ${m.meshLen} ${items.chainLinkMesh.unit} × W: ${m.meshWidth} ${m.lengthUnit} (Area: ${m.meshArea.toFixed(2)} ${m.areaUnit})`,
+        quantity: m.meshLen.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        unit: items.chainLinkMesh.unit,
+        capturedGps: formatGpsShort(gps),
+      });
+    }
+    const hasRrmData =
+      m.rrmLen > 0 ||
+      m.rrmVol > 0 ||
+      m.rrmWidthEntries.length > 0 ||
+      m.rrmHeightEntries.length > 0;
+    if (items.rrmWall.enabled && hasRrmData) {
+      const gps = project.rrmWalls[0]?.gps || getLatestFieldGps(project, 'rrmWall');
+      const wDetail =
+        m.rrmWidthEntries.length > 0
+          ? `W [${m.rrmWidthEntries.join(', ')}] Avg ${m.rrmWidth}`
+          : `W: ${m.rrmWidth}`;
+      const hDetail =
+        m.rrmHeightEntries.length > 0
+          ? `H [${m.rrmHeightEntries.join(', ')}] Avg ${m.rrmHeight}`
+          : `H: ${m.rrmHeight}`;
+      rows.push({
+        category: 'Masonry',
+        item: 'RMM Wall',
+        details: `L: ${m.rrmLen.toFixed(2)} ${m.lengthUnit} × ${wDetail} ${m.lengthUnit} × ${hDetail} ${m.lengthUnit}`,
+        quantity: m.rrmVol.toFixed(2),
+        unit: items.rrmWall.unit,
+        capturedGps: formatGpsShort(gps),
+      });
+    }
+  }
+
+  if (scope !== 'fencing') {
+    const hasRoadData =
+      m.roadLen > 0 ||
+      m.roadVol > 0 ||
+      m.roadWidthEntries.length > 0 ||
+      m.roadDepthEntries.length > 0;
+    if (items.roadMeasurement.enabled && hasRoadData) {
+      const roadSec = project.roadSections[0];
+      const gps = roadSec?.gps || roadSec?.startGps || getLatestFieldGps(project, 'roadMeasurement');
+      const chainageText = `Ch. ${m.chainageStart}–${m.chainageEnd} · `;
+      const wDetail =
+        m.roadWidthEntries.length > 0
+          ? `W [${m.roadWidthEntries.join(', ')}] Avg ${m.roadWidth}`
+          : `W: ${m.roadWidth}`;
+      const dDetail =
+        m.roadDepthEntries.length > 0
+          ? `D [${m.roadDepthEntries.join(', ')}] Avg ${m.roadDepth}`
+          : `D: ${m.roadDepth}`;
+      const roadDetails =
+        m.roadDepth > 0
+          ? `${chainageText}L: ${m.roadLen} ${items.roadMeasurement.unit} × ${wDetail} ${m.lengthUnit} × ${dDetail} ${m.lengthUnit} · Area: ${m.roadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${m.areaUnit} · Vol: ${m.roadVol.toFixed(2)} ${m.volumeUnit}`
+          : `${chainageText}L: ${m.roadLen} ${items.roadMeasurement.unit} × ${wDetail} ${m.lengthUnit} · Area: ${m.roadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${m.areaUnit}`;
+      rows.push({
+        category: 'Road',
+        item: 'Road Alignment',
+        details: roadDetails,
+        quantity: m.roadLen.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        unit: items.roadMeasurement.unit,
+        capturedGps: formatGpsShort(gps),
+      });
+    }
+    if (items.sideDrain.enabled && m.sideDrainLen > 0) {
+      const gps = getLatestFieldGps(project, 'sideDrain') || project.roadSections[0]?.gps;
+      rows.push({
+        category: 'Road',
+        item: 'Road Side Drain',
+        details: 'Measured length',
+        quantity: m.sideDrainLen.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        unit: items.sideDrain.unit,
+        capturedGps: formatGpsShort(gps),
+      });
+    }
+  }
+
+  const enabledCustom = customItems.filter((c) => {
+    if (!c.enabled || !(c.quantity > 0)) return false;
+    if (scope === 'fencing') return c.category === 'fencing';
+    if (scope === 'road') return c.category === 'road';
+    return true;
+  });
+
+  enabledCustom.forEach((c) => {
+    const gps =
+      c.gps ||
+      getLatestFieldGps(project, `custom:${c.id}`) ||
+      getLatestFieldGps(project, c.id);
+    rows.push({
+      category: `Custom (${c.category})`,
+      item: c.name,
+      details: 'Measured custom item',
+      quantity: String(c.quantity),
+      unit: c.unit,
+      capturedGps: formatGpsShort(gps),
+    });
+  });
+
+  return rows;
+}
+
 export function buildAllRecordedInputs(
   project: ConstructionProject,
   scope: StaticMapScope = 'all'
@@ -73,19 +253,19 @@ export function buildAllRecordedInputs(
   const rows: RecordedInputItem[] = [];
 
   if (scope !== 'road') {
-    if (items.anglePosts.enabled) {
+    if (items.anglePosts.enabled && m.totalAngle > 0) {
       const postGps =
         project.fencePosts.filter((p) => p.postType === 'angle_post' && p.gps).slice(-1)[0]?.gps ||
         getLatestFieldGps(project, 'angle_post');
       rows.push({
         category: 'Fencing',
-        fieldLabel: 'Angle Posts (Corner / End)',
+        fieldLabel: 'Angle Post',
         rawInput: `${m.totalAngle} ${items.anglePosts.unit}`,
         computedTotal: `${m.totalAngle} ${items.anglePosts.unit}`,
         capturedGps: formatGpsShort(postGps),
       });
     }
-    if (items.intermediatePosts.enabled) {
+    if (items.intermediatePosts.enabled && m.totalIntermed > 0) {
       const postGps =
         project.fencePosts.filter((p) => p.postType === 'intermediate_post' && p.gps).slice(-1)[0]?.gps ||
         getLatestFieldGps(project, 'intermediate_post');
@@ -97,7 +277,7 @@ export function buildAllRecordedInputs(
         capturedGps: formatGpsShort(postGps),
       });
     }
-    if (items.strutPosts.enabled) {
+    if (items.strutPosts.enabled && m.totalStrut > 0) {
       const postGps =
         project.fencePosts.filter((p) => p.postType === 'strut_post' && p.gps).slice(-1)[0]?.gps ||
         getLatestFieldGps(project, 'strut_post');
@@ -109,7 +289,7 @@ export function buildAllRecordedInputs(
         capturedGps: formatGpsShort(postGps),
       });
     }
-    if (items.gatePosts.enabled) {
+    if (items.gatePosts.enabled && m.totalGate > 0) {
       const postGps =
         project.fencePosts.filter((p) => p.postType === 'gate_post' && p.gps).slice(-1)[0]?.gps ||
         getLatestFieldGps(project, 'gate_post');
@@ -121,7 +301,7 @@ export function buildAllRecordedInputs(
         capturedGps: formatGpsShort(postGps),
       });
     }
-    if (items.chainLinkMesh.enabled) {
+    if (items.chainLinkMesh.enabled && m.meshLen > 0) {
       const meshGps = project.fenceMeshSegments[0]?.gps || getLatestFieldGps(project, 'chainLinkMesh');
       rows.push({
         category: 'Fencing',
@@ -130,15 +310,22 @@ export function buildAllRecordedInputs(
         computedTotal: `${m.meshLen.toLocaleString()} ${items.chainLinkMesh.unit}`,
         capturedGps: formatGpsShort(meshGps),
       });
-      rows.push({
-        category: 'Fencing',
-        fieldLabel: 'Chain-Link Mesh Width / Height',
-        rawInput: `${m.meshWidth} ${m.lengthUnit}`,
-        computedTotal: `Area: ${m.meshArea.toFixed(2)} ${m.areaUnit}`,
-        capturedGps: formatGpsShort(meshGps),
-      });
+      if (m.meshWidth > 0) {
+        rows.push({
+          category: 'Fencing',
+          fieldLabel: 'Chain-Link Mesh Width / Height',
+          rawInput: `${m.meshWidth} ${m.lengthUnit}`,
+          computedTotal: `Area: ${m.meshArea.toFixed(2)} ${m.areaUnit}`,
+          capturedGps: formatGpsShort(meshGps),
+        });
+      }
     }
-    if (items.rrmWall.enabled) {
+    const hasRrmData =
+      m.rrmLen > 0 ||
+      m.rrmVol > 0 ||
+      m.rrmWidthEntries.length > 0 ||
+      m.rrmHeightEntries.length > 0;
+    if (items.rrmWall.enabled && hasRrmData) {
       const rrmGps = project.rrmWalls[0]?.gps || getLatestFieldGps(project, 'rrmWall');
       rows.push({
         category: 'Masonry (RMM Wall)',
@@ -171,7 +358,12 @@ export function buildAllRecordedInputs(
   }
 
   if (scope !== 'fencing') {
-    if (items.roadMeasurement.enabled) {
+    const hasRoadData =
+      m.roadLen > 0 ||
+      m.roadVol > 0 ||
+      m.roadWidthEntries.length > 0 ||
+      m.roadDepthEntries.length > 0;
+    if (items.roadMeasurement.enabled && hasRoadData) {
       const roadSec = project.roadSections[0];
       const roadGps = roadSec?.gps || roadSec?.startGps || getLatestFieldGps(project, 'roadMeasurement');
       rows.push({
@@ -198,18 +390,20 @@ export function buildAllRecordedInputs(
         computedTotal: `Avg: ${m.roadWidth} ${m.lengthUnit} | Area: ${m.roadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${m.areaUnit}`,
         capturedGps: formatGpsShort(roadGps),
       });
-      rows.push({
-        category: 'Road',
-        fieldLabel: 'Road Depth / Thickness & Multi-Samples',
-        rawInput:
-          m.roadDepthEntries.length > 0
-            ? `Samples (${m.roadDepthEntries.length}): ${m.roadDepthEntries.join(', ')} ${m.lengthUnit}`
-            : `Single entry: ${m.roadDepth} ${m.lengthUnit}`,
-        computedTotal: `Avg: ${m.roadDepth} ${m.lengthUnit} | Vol: ${m.roadVol.toFixed(2)} ${m.volumeUnit}`,
-        capturedGps: formatGpsShort(roadSec?.endGps || roadGps),
-      });
+      if (m.roadDepth > 0 || m.roadDepthEntries.length > 0) {
+        rows.push({
+          category: 'Road',
+          fieldLabel: 'Road Depth / Thickness & Multi-Samples',
+          rawInput:
+            m.roadDepthEntries.length > 0
+              ? `Samples (${m.roadDepthEntries.length}): ${m.roadDepthEntries.join(', ')} ${m.lengthUnit}`
+              : `Single entry: ${m.roadDepth} ${m.lengthUnit}`,
+          computedTotal: `Avg: ${m.roadDepth} ${m.lengthUnit} | Vol: ${m.roadVol.toFixed(2)} ${m.volumeUnit}`,
+          capturedGps: formatGpsShort(roadSec?.endGps || roadGps),
+        });
+      }
     }
-    if (items.sideDrain.enabled) {
+    if (items.sideDrain.enabled && m.sideDrainLen > 0) {
       const drainGps = getLatestFieldGps(project, 'sideDrain') || project.roadSections[0]?.gps;
       rows.push({
         category: 'Road',
@@ -222,7 +416,7 @@ export function buildAllRecordedInputs(
   }
 
   const enabledCustom = customItems.filter((c) => {
-    if (!c.enabled) return false;
+    if (!c.enabled || !(c.quantity > 0)) return false;
     if (scope === 'fencing') return c.category === 'fencing';
     if (scope === 'road') return c.category === 'road';
     return true;
@@ -491,12 +685,10 @@ const SHARED_PRINT_CSS = `
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #1e293b;
-    margin: 20px 0 8px 0;
-    padding: 5px 10px;
-    background: #f1f5f9;
-    border-left: 3.5px solid #0f172a;
-    border-radius: 0 4px 4px 0;
+    color: #0f172a;
+    margin: 22px 0 10px 0;
+    padding: 0 0 5px 0;
+    border-bottom: 1.5px solid #cbd5e1;
     break-after: avoid;
     page-break-after: avoid;
   }
@@ -702,49 +894,6 @@ function buildTotalsCardsHtml(project: ConstructionProject, scope: StaticMapScop
         <div class="total-card-val">${mapData.allPoints.length} pts</div>
       </div>
     </div>
-  `;
-}
-
-function buildAllInputsTableHtml(
-  project: ConstructionProject,
-  scope: StaticMapScope,
-  sectionNum: number
-): string {
-  const inputs = buildAllRecordedInputs(project, scope);
-  if (inputs.length === 0) return '';
-
-  const rowsHtml = inputs
-    .map(
-      (item, idx) => `
-      <tr>
-        <td class="center">${idx + 1}</td>
-        <td><span class="cat-tag">${escapeHtml(item.category)}</span></td>
-        <td><strong>${escapeHtml(item.fieldLabel)}</strong></td>
-        <td>${escapeHtml(item.rawInput)}</td>
-        <td class="num">${escapeHtml(item.computedTotal)}</td>
-        <td class="mono muted">${escapeHtml(item.capturedGps || 'Not captured')}</td>
-      </tr>
-    `
-    )
-    .join('');
-
-  return `
-    <h2>${sectionNum}. All Recorded Field Inputs &amp; Multi-Sample Entries (${inputs.length})</h2>
-    <table>
-      <thead>
-        <tr>
-          <th class="center" style="width:32px;">#</th>
-          <th style="width:110px;">Category</th>
-          <th style="width:185px;">Input Field</th>
-          <th>Recorded Input / Samples</th>
-          <th class="num" style="width:145px;">Computed Total / Avg</th>
-          <th style="width:155px;">Captured GPS (Lat, Lng)</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rowsHtml}
-      </tbody>
-    </table>
   `;
 }
 
@@ -1026,64 +1175,25 @@ export function buildStandaloneReportHtml(
   const m = computeMeasurements(project, scope);
   const apiKey = getGoogleMapsApiKey();
 
-  const measurementRows: string[] = [];
-  let rowNum = 1;
-
-  if (scope !== 'road') {
-    if (items.anglePosts.enabled) {
-      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Angle Posts (Corner / End)</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalAngle}</td><td class="center">${escapeHtml(items.anglePosts.unit)}</td></tr>`);
-    }
-    if (items.intermediatePosts.enabled) {
-      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Intermediate Posts</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalIntermed}</td><td class="center">${escapeHtml(items.intermediatePosts.unit)}</td></tr>`);
-    }
-    if (items.strutPosts.enabled) {
-      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Strut Posts</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalStrut}</td><td class="center">${escapeHtml(items.strutPosts.unit)}</td></tr>`);
-    }
-    if (items.gatePosts.enabled) {
-      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Gate Posts</td><td class="muted">Fencing &bull; Physical count</td><td class="num">${m.totalGate}</td><td class="center">${escapeHtml(items.gatePosts.unit)}</td></tr>`);
-    }
-    if (items.chainLinkMesh.enabled) {
-      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Chain-Link Mesh</td><td class="muted">L: ${m.meshLen} ${escapeHtml(items.chainLinkMesh.unit)} &times; W: ${m.meshWidth} ${escapeHtml(m.lengthUnit)} (Area: ${m.meshArea.toFixed(2)} ${escapeHtml(m.areaUnit)})</td><td class="num">${m.meshLen.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="center">${escapeHtml(items.chainLinkMesh.unit)}</td></tr>`);
-    }
-    if (items.rrmWall.enabled) {
-      const wDetail = m.rrmWidthEntries.length > 0 ? `W samples [${m.rrmWidthEntries.join(', ')}] Avg ${m.rrmWidth}` : `W: ${m.rrmWidth}`;
-      const hDetail = m.rrmHeightEntries.length > 0 ? `H samples [${m.rrmHeightEntries.join(', ')}] Avg ${m.rrmHeight}` : `H: ${m.rrmHeight}`;
-      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>RMM Wall</td><td class="muted">L: ${m.rrmLen.toFixed(2)} ${escapeHtml(m.lengthUnit)} &times; ${escapeHtml(wDetail)} ${escapeHtml(m.lengthUnit)} &times; ${escapeHtml(hDetail)} ${escapeHtml(m.lengthUnit)}</td><td class="num">${m.rrmVol.toFixed(2)}</td><td class="center">${escapeHtml(items.rrmWall.unit)}</td></tr>`);
-    }
-  }
-
-  if (scope !== 'fencing') {
-    if (items.roadMeasurement.enabled) {
-      const chainageText = `Ch. ${escapeHtml(m.chainageStart)} &ndash; ${escapeHtml(m.chainageEnd)} &bull; `;
-      const wDetail = m.roadWidthEntries.length > 0 ? `W [${m.roadWidthEntries.join(', ')}] Avg ${m.roadWidth}` : `W: ${m.roadWidth}`;
-      const dDetail = m.roadDepthEntries.length > 0 ? `D [${m.roadDepthEntries.join(', ')}] Avg ${m.roadDepth}` : `D: ${m.roadDepth}`;
-      const roadDetails = m.roadDepth > 0
-        ? `${chainageText}L: ${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)} &times; ${escapeHtml(wDetail)} ${escapeHtml(m.lengthUnit)} &times; ${escapeHtml(dDetail)} ${escapeHtml(m.lengthUnit)} &bull; Area: ${m.roadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${escapeHtml(m.areaUnit)} &bull; Vol: ${m.roadVol.toFixed(2)} ${escapeHtml(m.volumeUnit)}`
-        : `${chainageText}L: ${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)} &times; ${escapeHtml(wDetail)} ${escapeHtml(m.lengthUnit)} &bull; Area: ${m.roadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${escapeHtml(m.areaUnit)}`;
-      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Road Alignment</td><td class="muted">${roadDetails}</td><td class="num">${m.roadLen.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="center">${escapeHtml(items.roadMeasurement.unit)}</td></tr>`);
-    }
-    if (items.sideDrain.enabled) {
-      measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>Road Side Drain</td><td class="muted">Road &bull; Measured length</td><td class="num">${m.sideDrainLen.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="center">${escapeHtml(items.sideDrain.unit)}</td></tr>`);
-    }
-  }
+  const measuredRows = buildMeasuredSummaryRows(project, scope);
+  const measurementRows = measuredRows.map(
+    (row, i) =>
+      `<tr><td class="center">${i + 1}</td><td><strong>${escapeHtml(row.item)}</strong><div class="muted">${escapeHtml(row.category)}</div></td><td>${escapeHtml(row.details)}</td><td class="num">${escapeHtml(row.quantity)}</td><td class="center">${escapeHtml(row.unit)}</td><td class="mono muted">${escapeHtml(row.capturedGps)}</td></tr>`
+  );
 
   const enabledCustom = customItems.filter((c) => {
-    if (!c.enabled) return false;
+    if (!c.enabled || !(c.quantity > 0)) return false;
     if (scope === 'fencing') return c.category === 'fencing';
     if (scope === 'road') return c.category === 'road';
     return true;
   });
 
-  enabledCustom.forEach((c) => {
-    measurementRows.push(`<tr><td class="center">${rowNum++}</td><td>${escapeHtml(c.name)}</td><td class="muted">${escapeHtml(c.category)} &bull; Custom item</td><td class="num">${c.quantity}</td><td class="center">${escapeHtml(c.unit)}</td></tr>`);
-  });
-
   const totalBadges = [
-    scope !== 'road' ? `<span class="total-pill">Posts: ${m.totalPosts} ${escapeHtml(m.postUnit)}</span>` : '',
-    `<span class="total-pill">Linear: ${m.totalAllLengths.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${escapeHtml(m.lengthUnit)}</span>`,
-    `<span class="total-pill">Area: ${m.totalAllAreas.toFixed(2)} ${escapeHtml(m.areaUnit)}</span>`,
-    `<span class="total-pill">Volume: ${m.totalAllVolumes.toFixed(2)} ${escapeHtml(m.volumeUnit)}</span>`,
-    enabledCustom.length > 0 ? `<span class="total-pill">Custom: ${m.totalCustomQty} items</span>` : '',
+    scope !== 'road' && m.totalPosts > 0 ? `<span class="total-pill">Posts: ${m.totalPosts} ${escapeHtml(m.postUnit)}</span>` : '',
+    m.totalAllLengths > 0 ? `<span class="total-pill">Linear: ${m.totalAllLengths.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${escapeHtml(m.lengthUnit)}</span>` : '',
+    m.totalAllAreas > 0 ? `<span class="total-pill">Area: ${m.totalAllAreas.toFixed(2)} ${escapeHtml(m.areaUnit)}</span>` : '',
+    m.totalAllVolumes > 0 ? `<span class="total-pill">Volume: ${m.totalAllVolumes.toFixed(2)} ${escapeHtml(m.volumeUnit)}</span>` : '',
+    enabledCustom.length > 0 ? `<span class="total-pill">Custom: ${m.totalCustomQty}</span>` : '',
   ]
     .filter(Boolean)
     .join('');
@@ -1092,35 +1202,37 @@ export function buildStandaloneReportHtml(
   if (scope === 'all' && project.auditInfo) {
     const a = project.auditInfo;
     const anyPosts = items.anglePosts.enabled || items.intermediatePosts.enabled || items.strutPosts.enabled || items.gatePosts.enabled;
-    if (anyPosts) {
+    if (anyPosts && (m.totalPosts > 0 || (a.verifiedPostCount ?? 0) > 0)) {
       const vp = a.verifiedPostCount ?? m.totalPosts;
       const diff = cleanVariance(vp, m.totalPosts, 0);
       auditRows.push(`<tr><td>Fence Posts Total</td><td class="num">${m.totalPosts} ${escapeHtml(m.postUnit)}</td><td class="num">${vp} ${escapeHtml(m.postUnit)}</td><td class="num">${escapeHtml(formatVariance(diff, 0))} ${escapeHtml(m.postUnit)}</td></tr>`);
     }
-    if (items.chainLinkMesh.enabled) {
+    if (items.chainLinkMesh.enabled && (m.meshLen > 0 || (a.verifiedMeshLength ?? 0) > 0)) {
       const vm = a.verifiedMeshLength ?? m.meshLen;
       const diff = cleanVariance(vm, m.meshLen, 2);
       auditRows.push(`<tr><td>Chain-Link Mesh Length</td><td class="num">${m.meshLen} ${escapeHtml(items.chainLinkMesh.unit)}</td><td class="num">${vm} ${escapeHtml(items.chainLinkMesh.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(items.chainLinkMesh.unit)}</td></tr>`);
     }
-    if (items.rrmWall.enabled) {
+    if (items.rrmWall.enabled && (m.rrmVol > 0 || (a.verifiedRrmVolume ?? 0) > 0)) {
       const vr = a.verifiedRrmVolume ?? roundTo(m.rrmVol, 2);
       const diff = cleanVariance(vr, roundTo(m.rrmVol, 2), 2);
       auditRows.push(`<tr><td>RMM Wall Volume</td><td class="num">${m.rrmVol.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td><td class="num">${vr.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td><td class="num">${diff > 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td></tr>`);
     }
-    if (items.roadMeasurement.enabled) {
+    if (items.roadMeasurement.enabled && (m.roadLen > 0 || (a.verifiedRoadLength ?? 0) > 0)) {
       const vrd = a.verifiedRoadLength ?? m.roadLen;
       const diff = cleanVariance(vrd, m.roadLen, 2);
       auditRows.push(`<tr><td>Road Length</td><td class="num">${m.roadLen} ${escapeHtml(items.roadMeasurement.unit)}</td><td class="num">${vrd} ${escapeHtml(items.roadMeasurement.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(items.roadMeasurement.unit)}</td></tr>`);
     }
-    if (items.sideDrain.enabled) {
+    if (items.sideDrain.enabled && (m.sideDrainLen > 0 || (a.verifiedSideDrainLength ?? 0) > 0)) {
       const vsd = a.verifiedSideDrainLength ?? m.sideDrainLen;
       const diff = cleanVariance(vsd, m.sideDrainLen, 2);
       auditRows.push(`<tr><td>Road Side Drain</td><td class="num">${m.sideDrainLen} ${escapeHtml(items.sideDrain.unit)}</td><td class="num">${vsd} ${escapeHtml(items.sideDrain.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(items.sideDrain.unit)}</td></tr>`);
     }
     enabledCustom.forEach((c) => {
       const vc = a.verifiedCustomItems?.[c.id] ?? c.quantity;
-      const diff = cleanVariance(vc, c.quantity, 2);
-      auditRows.push(`<tr><td>${escapeHtml(c.name)}</td><td class="num">${c.quantity} ${escapeHtml(c.unit)}</td><td class="num">${vc} ${escapeHtml(c.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(c.unit)}</td></tr>`);
+      if (c.quantity > 0 || vc > 0) {
+        const diff = cleanVariance(vc, c.quantity, 2);
+        auditRows.push(`<tr><td>${escapeHtml(c.name)}</td><td class="num">${c.quantity} ${escapeHtml(c.unit)}</td><td class="num">${vc} ${escapeHtml(c.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(c.unit)}</td></tr>`);
+      }
     });
   }
 
@@ -1131,12 +1243,106 @@ export function buildStandaloneReportHtml(
       ? 'Road Works Measurement Report'
       : 'Site Measurement & Technical Audit Report';
 
+  const entityComparisons = computeEntityAuditComparisons(project, scope).filter(
+    (row) =>
+      row.item.nos !== undefined ||
+      row.item.length !== undefined ||
+      row.item.width !== undefined ||
+      row.item.thickness !== undefined ||
+      row.item.verifiedOverride !== undefined ||
+      row.entityQty > 0
+  );
+
   let nextSectionNum = 1;
   const summarySecNum = nextSectionNum++;
-  const hasInputs = buildAllRecordedInputs(project, scope).length > 0;
-  const inputsTableHtml = hasInputs ? buildAllInputsTableHtml(project, scope, nextSectionNum++) : '';
+  const entitySecNum = entityComparisons.length > 0 ? nextSectionNum++ : 0;
+  const auditSecNum = scope === 'all' && project.auditInfo && (auditRows.length > 0 || project.auditInfo.generalRemarks || project.auditInfo.auditorName) ? nextSectionNum++ : 0;
   const mapSecNum = nextSectionNum++;
-  const auditSecNum = nextSectionNum++;
+
+  const entityStatusLabel = (status: string) => {
+    if (status === 'matched') return 'Matched';
+    if (status === 'shortfall') return 'Shortfall (Overclaimed)';
+    if (status === 'excess') return 'Excess Verified';
+    return 'Pending Audit';
+  };
+
+  const hasAnyRates = entityComparisons.some((r) => r.rate !== undefined && r.rate > 0);
+  const totalEntityAmount = roundTo(
+    entityComparisons.reduce((sum, r) => sum + (r.entityAmount ?? 0), 0),
+    2
+  );
+  const totalAuditAmount = roundTo(
+    entityComparisons.reduce((sum, r) => sum + (r.auditAmount ?? 0), 0),
+    2
+  );
+  const totalAmountVariance = hasAnyRates
+    ? cleanVariance(totalAuditAmount, totalEntityAmount, 2)
+    : null;
+
+  const entityRowsHtml = entityComparisons
+    .map((row, idx) => {
+      const unit = row.auditUnit || row.item.unit;
+      const varText =
+        row.variance === null
+          ? 'Pending'
+          : `${formatVariance(row.variance, 2)} ${unit}${row.variancePct !== null && row.variance !== 0 ? ` (${row.variancePct > 0 ? `+${row.variancePct}` : row.variancePct}%)` : ''}`;
+      const varColor =
+        row.variance === null
+          ? '#64748b'
+          : row.variance < 0
+          ? '#dc2626'
+          : row.variance > 0
+          ? '#2563eb'
+          : '#047857';
+
+      const rateText = row.rate !== undefined ? `${row.rate}` : '—';
+      const entityAmtText =
+        row.entityAmount !== null
+          ? row.entityAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : '—';
+      const auditAmtText =
+        row.auditAmount !== null
+          ? row.auditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : row.rate !== undefined
+          ? 'Pending'
+          : '—';
+      const amtVarText =
+        row.amountVariance !== null
+          ? formatVariance(row.amountVariance, 2)
+          : '—';
+      const amtVarColor =
+        row.amountVariance === null
+          ? '#64748b'
+          : row.amountVariance < 0
+          ? '#dc2626'
+          : row.amountVariance > 0
+          ? '#2563eb'
+          : '#047857';
+
+      return `
+        <tr>
+          <td class="center">${idx + 1}</td>
+          <td><strong>${escapeHtml(row.item.itemName || row.auditLabel)}</strong>${row.item.remarks ? `<div class="muted">${escapeHtml(row.item.remarks)}</div>` : ''}</td>
+          <td class="num mono">${escapeHtml(rateText)}</td>
+          <td class="num">${row.item.nos ?? '—'}</td>
+          <td class="num">${row.item.length ?? '—'}</td>
+          <td class="num">${row.item.width ?? '—'}</td>
+          <td class="num">${row.item.thickness ?? '—'}</td>
+          <td class="num" style="font-weight:800;">${row.entityQty} <span class="muted">${escapeHtml(unit)}</span></td>
+          <td class="num mono" style="font-weight:700;">${escapeHtml(entityAmtText)}</td>
+          <td class="num" style="background:#faf5ff;">${row.auditDims.nos ?? '—'}</td>
+          <td class="num" style="background:#faf5ff;">${row.auditDims.length ?? '—'}</td>
+          <td class="num" style="background:#faf5ff;">${row.auditDims.width ?? '—'}</td>
+          <td class="num" style="background:#faf5ff;">${row.auditDims.thickness ?? '—'}</td>
+          <td class="num" style="font-weight:800;color:#3730a3;background:#eef2ff;">${row.auditQty !== null ? `${row.auditQty}` : 'Pending'} <span class="muted">${escapeHtml(unit)}</span></td>
+          <td class="num mono" style="font-weight:700;color:#3730a3;background:#ede9fe;">${escapeHtml(auditAmtText)}</td>
+          <td class="num" style="color:${varColor};font-weight:800;">${escapeHtml(varText)}</td>
+          <td class="num mono" style="color:${amtVarColor};font-weight:800;">${escapeHtml(amtVarText)}</td>
+          <td>${escapeHtml(entityStatusLabel(row.status))}</td>
+        </tr>
+      `;
+    })
+    .join('');
 
   return `
     <!DOCTYPE html>
@@ -1173,34 +1379,36 @@ export function buildStandaloneReportHtml(
             <div class="info-row"><span class="info-label">Location</span><span class="info-val">${escapeHtml(project.location || 'N/A')}</span></div>
             <div class="info-row"><span class="info-label">Auditor</span><span class="info-val">${escapeHtml(project.auditInfo?.auditorName || 'Pending Assignment')}</span></div>
             <div class="info-row"><span class="info-label">Audit Status</span><span class="info-val"><span class="badge">${escapeHtml(formatAuditStatus(project.auditInfo?.auditStatus))}</span></span></div>
+            ${project.entityName ? `<div class="info-row"><span class="info-label">Executing Entity</span><span class="info-val">${escapeHtml(project.entityName)}</span></div>` : ''}
           </div>
 
           ${buildTotalsCardsHtml(project, scope)}
 
-          <h2>${summarySecNum}. Physical Measurement Summary &amp; Totals</h2>
+          <h2>${summarySecNum}. Physical Measurement Summary (${measurementRows.length} Recorded Item${measurementRows.length === 1 ? '' : 's'})</h2>
           <table>
             <thead>
               <tr>
-                <th class="center" style="width:32px;">#</th>
-                <th style="width:170px;">Work Item</th>
-                <th>Dimensions / Specification</th>
-                <th class="num" style="width:85px;">Quantity</th>
-                <th class="center" style="width:55px;">Unit</th>
+                <th class="center" style="width:30px;">#</th>
+                <th style="width:155px;">Work Item</th>
+                <th>Inputs / Dimensions / Multi-Samples</th>
+                <th class="num" style="width:82px;">Quantity</th>
+                <th class="center" style="width:52px;">Unit</th>
+                <th style="width:135px;">Captured GPS</th>
               </tr>
             </thead>
             <tbody>
-              ${measurementRows.length > 0 ? measurementRows.join('') : '<tr><td colspan="5" class="center muted">No measurement items enabled.</td></tr>'}
-              <tr class="totals-row">
-                <td class="center">&Sigma;</td>
-                <td>GRAND TOTALS</td>
-                <td colspan="3">
-                  <div class="totals-pills">${totalBadges}</div>
-                </td>
-              </tr>
+              ${measurementRows.length > 0 ? measurementRows.join('') : '<tr><td colspan="6" class="center muted">No measurement items with inputted data yet.</td></tr>'}
+              ${totalBadges ? `
+                <tr class="totals-row">
+                  <td class="center">&Sigma;</td>
+                  <td>GRAND TOTALS</td>
+                  <td colspan="4">
+                    <div class="totals-pills">${totalBadges}</div>
+                  </td>
+                </tr>
+              ` : ''}
             </tbody>
           </table>
-
-          ${inputsTableHtml}
 
           ${project.auditNotes?.trim() ? `
             <div class="remarks-box">
@@ -1209,28 +1417,77 @@ export function buildStandaloneReportHtml(
             </div>
           ` : ''}
 
-          ${buildMapSectionHtml(project, scope, `${mapSecNum}. Site Location & Real-Time Geospatial Map`, liveGps)}
-
-          ${scope === 'all' && project.auditInfo ? `
-            <h2>${auditSecNum}. Auditor Verification &amp; Reconciliation</h2>
+          ${entityComparisons.length > 0 ? `
+            <h2>${entitySecNum}. Entity Measurements vs. Audit Verification &amp; Variances${project.entityName ? ` (${escapeHtml(project.entityName)})` : ''}</h2>
             <table>
               <thead>
                 <tr>
-                  <th>Item</th>
-                  <th class="num" style="width:110px;">Logged</th>
-                  <th class="num" style="width:110px;">Verified</th>
-                  <th class="num" style="width:110px;">Variance</th>
+                  <th class="center" rowspan="2" style="width:24px;">#</th>
+                  <th rowspan="2" style="min-width:125px;">Work Item</th>
+                  <th class="num" rowspan="2" style="width:54px;">Rate / Unit</th>
+                  <th class="center" colspan="6" style="background:#f1f5f9;border-bottom:1px solid #cbd5e1;">Entity Claimed Measurement (MB)</th>
+                  <th class="center" colspan="6" style="background:#eef2ff;color:#3730a3;border-bottom:1px solid #cbd5e1;">Audit Field Verified Measurement</th>
+                  <th class="num" rowspan="2" style="width:88px;">Qty Variance</th>
+                  <th class="num" rowspan="2" style="width:88px;">Cost Variance</th>
+                  <th rowspan="2" style="width:95px;">Status</th>
+                </tr>
+                <tr>
+                  <th class="num" style="width:32px;">Nos</th>
+                  <th class="num" style="width:36px;">L</th>
+                  <th class="num" style="width:36px;">W</th>
+                  <th class="num" style="width:36px;">T</th>
+                  <th class="num" style="width:56px;font-weight:800;background:#f8fafc;">Qty</th>
+                  <th class="num" style="width:64px;font-weight:800;background:#f1f5f9;">Amount</th>
+                  <th class="num" style="width:32px;background:#f5f3ff;">Nos</th>
+                  <th class="num" style="width:36px;background:#f5f3ff;">L</th>
+                  <th class="num" style="width:36px;background:#f5f3ff;">W</th>
+                  <th class="num" style="width:36px;background:#f5f3ff;">T</th>
+                  <th class="num" style="width:56px;font-weight:800;background:#e0e7ff;color:#3730a3;">Qty</th>
+                  <th class="num" style="width:64px;font-weight:800;background:#ede9fe;color:#3730a3;">Amount</th>
                 </tr>
               </thead>
               <tbody>
-                ${auditRows.join('')}
+                ${entityRowsHtml}
+                ${hasAnyRates ? `
+                  <tr class="totals-row">
+                    <td class="center">&Sigma;</td>
+                    <td colspan="6">TOTAL FINANCIAL VALUE &amp; AUDIT RECOVERY</td>
+                    <td class="num mono" style="font-weight:800;">${totalEntityAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td colspan="5"></td>
+                    <td class="num mono" style="font-weight:800;color:#3730a3;">${totalAuditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td></td>
+                    <td class="num mono" style="font-weight:800;color:${(totalAmountVariance ?? 0) < 0 ? '#dc2626' : (totalAmountVariance ?? 0) > 0 ? '#2563eb' : '#047857'};">${totalAmountVariance !== null ? formatVariance(totalAmountVariance, 2) : '—'}</td>
+                    <td></td>
+                  </tr>
+                ` : ''}
               </tbody>
             </table>
+          ` : ''}
+
+          ${auditSecNum > 0 && project.auditInfo ? `
+            <h2>${auditSecNum}. Auditor Verification &amp; Reconciliation</h2>
+            ${auditRows.length > 0 ? `
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th class="num" style="width:110px;">Logged</th>
+                    <th class="num" style="width:110px;">Verified</th>
+                    <th class="num" style="width:110px;">Variance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${auditRows.join('')}
+                </tbody>
+              </table>
+            ` : ''}
             <div class="remarks-box">
               <strong>Auditor Remarks (${escapeHtml(project.auditInfo.auditDate)}):</strong>
               ${escapeHtml(project.auditInfo.generalRemarks || 'No remarks recorded.')}
             </div>
           ` : ''}
+
+          ${buildMapSectionHtml(project, scope, `${mapSecNum}. Site Location & Real-Time Geospatial Map`, liveGps)}
 
           <div class="sig-grid">
             <div class="sig-box">Prepared By (Site Engineer / Surveyor)</div>
@@ -1354,7 +1611,6 @@ export function exportProjectToExcel(
     return true;
   });
   const m = computeMeasurements(project, scope);
-  const allInputs = buildAllRecordedInputs(project, scope);
   const mapData = getProjectMapData(project, scope);
 
   const scopeLabel =
@@ -1370,6 +1626,9 @@ export function exportProjectToExcel(
   rows.push(`Project Name,${csvCell(project.name)}`);
   rows.push(`Client,${csvCell(project.clientName || 'N/A')}`);
   rows.push(`Location,${csvCell(project.location || 'N/A')}`);
+  if (project.entityName) {
+    rows.push(`Executing Entity,${csvCell(project.entityName)}`);
+  }
   rows.push(`Auditor,${csvCell(project.auditInfo?.auditorName || 'Pending Assignment')}`);
   rows.push(`Audit Status,${csvCell(formatAuditStatus(project.auditInfo?.auditStatus))}`);
   if (project.siteCoordinates) {
@@ -1395,78 +1654,40 @@ export function exportProjectToExcel(
   }
   rows.push('');
 
+  const measuredRows = buildMeasuredSummaryRows(project, scope);
   rows.push(`1. PHYSICAL MEASUREMENT SUMMARY & TOTALS`);
-  rows.push(`#,Category,Work Item,Dimensions / Samples / Specification,Quantity,Unit`);
+  rows.push(`#,Category,Work Item,Dimensions / Samples / Specification,Quantity,Unit,Captured GPS`);
 
-  let idx = 1;
-  if (scope !== 'road') {
-    if (items.anglePosts.enabled) {
-      rows.push(`${idx++},Fencing,Angle Posts (Corner / End),Physical count,${m.totalAngle},${csvCell(items.anglePosts.unit)}`);
-    }
-    if (items.intermediatePosts.enabled) {
-      rows.push(`${idx++},Fencing,Intermediate Posts,Physical count,${m.totalIntermed},${csvCell(items.intermediatePosts.unit)}`);
-    }
-    if (items.strutPosts.enabled) {
-      rows.push(`${idx++},Fencing,Strut Posts,Physical count,${m.totalStrut},${csvCell(items.strutPosts.unit)}`);
-    }
-    if (items.gatePosts.enabled) {
-      rows.push(`${idx++},Fencing,Gate Posts,Physical count,${m.totalGate},${csvCell(items.gatePosts.unit)}`);
-    }
-    if (items.chainLinkMesh.enabled) {
+  if (measuredRows.length === 0) {
+    rows.push(`-,None,No measurement items with inputted data yet,-,-,-,-`);
+  } else {
+    measuredRows.forEach((mr, i) => {
       rows.push(
-        `${idx++},Fencing,Chain-Link Mesh,${csvCell(`L: ${m.meshLen} ${items.chainLinkMesh.unit} x W: ${m.meshWidth} ${m.lengthUnit} (Area: ${m.meshArea.toFixed(2)} ${m.areaUnit})`)},${m.meshLen.toFixed(2)},${csvCell(items.chainLinkMesh.unit)}`
+        `${i + 1},${csvCell(mr.category)},${csvCell(mr.item)},${csvCell(mr.details)},${csvCell(mr.quantity)},${csvCell(mr.unit)},${csvCell(mr.capturedGps)}`
       );
-    }
-    if (items.rrmWall.enabled) {
-      const wSamples = m.rrmWidthEntries.length > 0 ? ` | W samples: [${m.rrmWidthEntries.join('; ')}]` : '';
-      const hSamples = m.rrmHeightEntries.length > 0 ? ` | H samples: [${m.rrmHeightEntries.join('; ')}]` : '';
-      rows.push(
-        `${idx++},Fencing,RMM Wall,${csvCell(`L: ${m.rrmLen.toFixed(2)} ${m.lengthUnit} x W: ${m.rrmWidth.toFixed(2)} ${m.lengthUnit} x H: ${m.rrmHeight.toFixed(2)} ${m.lengthUnit}${wSamples}${hSamples}`)},${m.rrmVol.toFixed(2)},${csvCell(items.rrmWall.unit)}`
-      );
-    }
+    });
   }
-  if (scope !== 'fencing') {
-    if (items.roadMeasurement.enabled) {
-      const chainagePrefix = `Chainage: ${m.chainageStart} to ${m.chainageEnd} | `;
-      const wSamples = m.roadWidthEntries.length > 0 ? ` | W samples: [${m.roadWidthEntries.join('; ')}]` : '';
-      const dSamples = m.roadDepthEntries.length > 0 ? ` | D samples: [${m.roadDepthEntries.join('; ')}]` : '';
-      const roadDetails =
-        m.roadDepth > 0
-          ? `${chainagePrefix}L: ${m.roadLen} ${items.roadMeasurement.unit} x W: ${m.roadWidth} ${m.lengthUnit} x D: ${m.roadDepth} ${m.lengthUnit}${wSamples}${dSamples} (Area: ${m.roadArea.toFixed(2)} ${m.areaUnit} | Vol: ${m.roadVol.toFixed(2)} ${m.volumeUnit})`
-          : `${chainagePrefix}L: ${m.roadLen} ${items.roadMeasurement.unit} x W: ${m.roadWidth} ${m.lengthUnit}${wSamples} (Area: ${m.roadArea.toFixed(2)} ${m.areaUnit})`;
-      rows.push(`${idx++},Road,Road Alignment,${csvCell(roadDetails)},${m.roadLen.toFixed(2)},${csvCell(items.roadMeasurement.unit)}`);
-    }
-    if (items.sideDrain.enabled) {
-      rows.push(`${idx++},Road,Road Side Drain,Measured length,${m.sideDrainLen.toFixed(2)},${csvCell(items.sideDrain.unit)}`);
-    }
-  }
-  enabledCustom.forEach((c) => {
-    rows.push(`${idx++},${csvCell(c.category)},${csvCell(c.name)},Custom item,${c.quantity},${csvCell(c.unit)}`);
-  });
 
-  if (scope !== 'road') {
-    rows.push(`TOTAL,Fencing,Total Fence Posts,All enabled post types,${m.totalPosts},${csvCell(m.postUnit)}`);
+  if (scope !== 'road' && m.totalPosts > 0) {
+    rows.push(`TOTAL,Fencing,Total Fence Posts,All enabled post types,${m.totalPosts},${csvCell(m.postUnit)},`);
   }
-  rows.push(`TOTAL,Linear,Total Linear Length,Mesh + RMM + Road + Drain,${m.totalAllLengths.toFixed(2)},${csvCell(m.lengthUnit)}`);
-  rows.push(`TOTAL,Area,Total Surface Area,Mesh + Road surface,${m.totalAllAreas.toFixed(2)},${csvCell(m.areaUnit)}`);
-  rows.push(`TOTAL,Volume,Total Volume,RMM Masonry + Road Earthwork,${m.totalAllVolumes.toFixed(2)},${csvCell(m.volumeUnit)}`);
-  if (enabledCustom.length > 0) {
-    rows.push(`TOTAL,Custom,Total Custom Quantities,Sum of active custom items,${m.totalCustomQty},items`);
+  if (m.totalAllLengths > 0) {
+    rows.push(`TOTAL,Linear,Total Linear Length,Mesh + RMM + Road + Drain,${m.totalAllLengths.toFixed(2)},${csvCell(m.lengthUnit)},`);
   }
-  rows.push(`TOTAL,Geospatial,Total Mapped GPS Points,Site + Road + Posts + Input Pins,${mapData.allPoints.length},points`);
-
-  rows.push('');
-  rows.push(`2. ALL RECORDED FIELD INPUTS & MULTI-SAMPLES`);
-  rows.push(`#,Category,Input Field,Recorded Input / Samples,Computed Total / Average,Captured GPS (Lat / Lng)`);
-  allInputs.forEach((inp, i) => {
-    rows.push(
-      `${i + 1},${csvCell(inp.category)},${csvCell(inp.fieldLabel)},${csvCell(inp.rawInput)},${csvCell(inp.computedTotal)},${csvCell(inp.capturedGps || 'Not captured')}`
-    );
-  });
+  if (m.totalAllAreas > 0) {
+    rows.push(`TOTAL,Area,Total Surface Area,Mesh + Road surface,${m.totalAllAreas.toFixed(2)},${csvCell(m.areaUnit)},`);
+  }
+  if (m.totalAllVolumes > 0) {
+    rows.push(`TOTAL,Volume,Total Volume,RMM Masonry + Road Earthwork,${m.totalAllVolumes.toFixed(2)},${csvCell(m.volumeUnit)},`);
+  }
+  if (enabledCustom.some((c) => c.quantity > 0)) {
+    rows.push(`TOTAL,Custom,Total Custom Quantities,Sum of active custom items,${m.totalCustomQty},items,`);
+  }
+  rows.push(`TOTAL,Geospatial,Total Mapped GPS Points,Site + Road + Posts + Input Pins,${mapData.allPoints.length},points,`);
 
   if (scope !== 'road' && project.fencePosts.length > 0) {
     rows.push('');
-    rows.push(`3. INDIVIDUAL FENCE POST ENTRIES`);
+    rows.push(`INDIVIDUAL FENCE POST ENTRIES`);
     rows.push(`#,Post Type,Height (${m.lengthUnit}),Latitude,Longitude,Accuracy (m),Timestamp`);
     project.fencePosts.forEach((p, i) => {
       rows.push(
@@ -1488,37 +1709,96 @@ export function exportProjectToExcel(
 
   if (scope === 'all' && project.auditInfo) {
     const a = project.auditInfo;
-    rows.push('');
-    rows.push(`AUDITOR VERIFICATION & RECONCILIATION`);
-    rows.push(`Auditor Name,${csvCell(a.auditorName || 'Pending')},Audit Date,${csvCell(a.auditDate)},Status,${csvCell(formatAuditStatus(a.auditStatus))}`);
-    rows.push(`Remarks,${csvCell(a.generalRemarks || 'None')}`);
-    rows.push(`Item,Logged,Physically Verified,Variance,Unit`);
+    const csvAuditRows: string[] = [];
     const anyPosts = items.anglePosts.enabled || items.intermediatePosts.enabled || items.strutPosts.enabled || items.gatePosts.enabled;
-    if (anyPosts) {
+    if (anyPosts && (m.totalPosts > 0 || (a.verifiedPostCount ?? 0) > 0)) {
       const vp = a.verifiedPostCount ?? m.totalPosts;
-      rows.push(`Fence Posts Total,${m.totalPosts},${vp},${cleanVariance(vp, m.totalPosts, 0)},${csvCell(m.postUnit)}`);
+      csvAuditRows.push(`Fence Posts Total,${m.totalPosts},${vp},${cleanVariance(vp, m.totalPosts, 0)},${csvCell(m.postUnit)}`);
     }
-    if (items.chainLinkMesh.enabled) {
+    if (items.chainLinkMesh.enabled && (m.meshLen > 0 || (a.verifiedMeshLength ?? 0) > 0)) {
       const vm = a.verifiedMeshLength ?? m.meshLen;
-      rows.push(`Chain-Link Mesh,${m.meshLen},${vm},${cleanVariance(vm, m.meshLen, 2)},${csvCell(items.chainLinkMesh.unit)}`);
+      csvAuditRows.push(`Chain-Link Mesh,${m.meshLen},${vm},${cleanVariance(vm, m.meshLen, 2)},${csvCell(items.chainLinkMesh.unit)}`);
     }
-    if (items.rrmWall.enabled) {
+    if (items.rrmWall.enabled && (m.rrmVol > 0 || (a.verifiedRrmVolume ?? 0) > 0)) {
       const vr = a.verifiedRrmVolume ?? roundTo(m.rrmVol, 2);
       const diff = cleanVariance(vr, roundTo(m.rrmVol, 2), 2);
-      rows.push(`RMM Wall,${m.rrmVol.toFixed(2)},${vr.toFixed(2)},${diff.toFixed(2)},${csvCell(items.rrmWall.unit)}`);
+      csvAuditRows.push(`RMM Wall,${m.rrmVol.toFixed(2)},${vr.toFixed(2)},${diff.toFixed(2)},${csvCell(items.rrmWall.unit)}`);
     }
-    if (items.roadMeasurement.enabled) {
+    if (items.roadMeasurement.enabled && (m.roadLen > 0 || (a.verifiedRoadLength ?? 0) > 0)) {
       const vrd = a.verifiedRoadLength ?? m.roadLen;
-      rows.push(`Road Length,${m.roadLen},${vrd},${cleanVariance(vrd, m.roadLen, 2)},${csvCell(items.roadMeasurement.unit)}`);
+      csvAuditRows.push(`Road Length,${m.roadLen},${vrd},${cleanVariance(vrd, m.roadLen, 2)},${csvCell(items.roadMeasurement.unit)}`);
     }
-    if (items.sideDrain.enabled) {
+    if (items.sideDrain.enabled && (m.sideDrainLen > 0 || (a.verifiedSideDrainLength ?? 0) > 0)) {
       const vsd = a.verifiedSideDrainLength ?? m.sideDrainLen;
-      rows.push(`Side Drain,${m.sideDrainLen},${vsd},${cleanVariance(vsd, m.sideDrainLen, 2)},${csvCell(items.sideDrain.unit)}`);
+      csvAuditRows.push(`Side Drain,${m.sideDrainLen},${vsd},${cleanVariance(vsd, m.sideDrainLen, 2)},${csvCell(items.sideDrain.unit)}`);
     }
     enabledCustom.forEach((c) => {
       const vc = a.verifiedCustomItems?.[c.id] ?? c.quantity;
-      rows.push(`${csvCell(c.name)},${c.quantity},${vc},${cleanVariance(vc, c.quantity, 2)},${csvCell(c.unit)}`);
+      if (c.quantity > 0 || vc > 0) {
+        csvAuditRows.push(`${csvCell(c.name)},${c.quantity},${vc},${cleanVariance(vc, c.quantity, 2)},${csvCell(c.unit)}`);
+      }
     });
+
+    if (csvAuditRows.length > 0 || a.generalRemarks || a.auditorName) {
+      rows.push('');
+      rows.push(`AUDITOR VERIFICATION & RECONCILIATION`);
+      rows.push(`Auditor Name,${csvCell(a.auditorName || 'Pending')},Audit Date,${csvCell(a.auditDate)},Status,${csvCell(formatAuditStatus(a.auditStatus))}`);
+      rows.push(`Remarks,${csvCell(a.generalRemarks || 'None')}`);
+      if (csvAuditRows.length > 0) {
+        rows.push(`Item,Logged,Physically Verified,Variance,Unit`);
+        rows.push(...csvAuditRows);
+      }
+    }
+  }
+
+  const entityComparisons = computeEntityAuditComparisons(project, scope).filter(
+    (row) =>
+      row.item.nos !== undefined ||
+      row.item.length !== undefined ||
+      row.item.width !== undefined ||
+      row.item.thickness !== undefined ||
+      row.item.verifiedOverride !== undefined ||
+      row.entityQty > 0
+  );
+  if (entityComparisons.length > 0) {
+    rows.push('');
+    rows.push(`ENTITY MEASUREMENTS VS. AUDIT VERIFICATION & VARIANCES`);
+    if (project.entityName) {
+      rows.push(`Executing Entity,${csvCell(project.entityName)}`);
+    }
+    rows.push(
+      `#,Work Item,Linked Audit Target,Rate / Unit,Entity Nos,Entity Length,Entity Width,Entity Thickness,Entity Dimensions,Entity Qty,Entity Claimed Amount,Audit Nos,Audit Length,Audit Width,Audit Thickness,Audit Dimensions,Audit Verified Qty,Audit Verified Amount,Quantity Variance (Audit - Entity),Variance %,Cost Variance (Audit - Entity),Status,Unit,Remarks`
+    );
+    entityComparisons.forEach((r, i) => {
+      const unit = r.auditUnit || r.item.unit;
+      const statusText =
+        r.status === 'matched'
+          ? 'Matched'
+          : r.status === 'shortfall'
+          ? 'Shortfall (Overclaimed)'
+          : r.status === 'excess'
+          ? 'Excess Verified'
+          : 'Pending Audit';
+      rows.push(
+        `${i + 1},${csvCell(r.item.itemName || r.auditLabel)},${csvCell(r.auditLabel)},${r.rate ?? ''},${r.item.nos ?? ''},${r.item.length ?? ''},${r.item.width ?? ''},${r.item.thickness ?? ''},${csvCell(formatEntityDimensionsLabel(r.item))},${r.entityQty},${r.entityAmount ?? ''},${r.auditDims.nos ?? ''},${r.auditDims.length ?? ''},${r.auditDims.width ?? ''},${r.auditDims.thickness ?? ''},${csvCell(formatAuditDimensionsLabel(r.item, r.auditDims))},${r.auditQty ?? ''},${r.auditAmount ?? ''},${r.variance ?? ''},${r.variancePct !== null ? `${r.variancePct}%` : ''},${r.amountVariance ?? ''},${csvCell(statusText)},${csvCell(unit)},${csvCell(r.item.remarks || '')}`
+      );
+    });
+
+    const hasAnyRatesInCsv = entityComparisons.some((r) => r.rate !== undefined && r.rate > 0);
+    if (hasAnyRatesInCsv) {
+      const totalEntityAmount = roundTo(
+        entityComparisons.reduce((sum, r) => sum + (r.entityAmount ?? 0), 0),
+        2
+      );
+      const totalAuditAmount = roundTo(
+        entityComparisons.reduce((sum, r) => sum + (r.auditAmount ?? 0), 0),
+        2
+      );
+      const totalAmountVariance = cleanVariance(totalAuditAmount, totalEntityAmount, 2);
+      rows.push(
+        `TOTALS,FINANCIAL RECONCILIATION,,,Claimed Total Value,,,,,,${totalEntityAmount},,,,Verified Total Value,,${totalAuditAmount},,Net Cost Variance,${totalAmountVariance},,,`
+      );
+    }
   }
 
   const csvContent = '\uFEFF' + rows.join('\r\n');
