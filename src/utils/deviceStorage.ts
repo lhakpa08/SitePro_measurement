@@ -22,12 +22,35 @@ function isValidProjectShape(item: unknown): item is ConstructionProject {
   const candidate = item as Partial<ConstructionProject>;
   return (
     typeof candidate.id === 'string' &&
+    candidate.id.length > 0 &&
     typeof candidate.name === 'string' &&
     Array.isArray(candidate.fencePosts) &&
     Array.isArray(candidate.fenceMeshSegments) &&
     Array.isArray(candidate.rrmWalls) &&
     Array.isArray(candidate.roadSections)
   );
+}
+
+export function deduplicateProjectsById(
+  projects: unknown[]
+): ConstructionProject[] {
+  const byId = new Map<string, ConstructionProject>();
+  const order: string[] = [];
+  for (const item of projects) {
+    if (!isValidProjectShape(item)) continue;
+    const existing = byId.get(item.id);
+    if (!existing) {
+      byId.set(item.id, item);
+      order.push(item.id);
+    } else {
+      const existingTs = Math.max(existing.updatedAt || 0, existing.createdAt || 0);
+      const nextTs = Math.max(item.updatedAt || 0, item.createdAt || 0);
+      if (nextTs >= existingTs) {
+        byId.set(item.id, item);
+      }
+    }
+  }
+  return order.map((id) => byId.get(id)!);
 }
 
 export function loadInitialProjectsSync(): {
@@ -39,8 +62,11 @@ export function loadInitialProjectsSync(): {
     if (savedList) {
       const parsed = JSON.parse(savedList);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const valid = parsed.filter(isValidProjectShape);
+        const valid = deduplicateProjectsById(parsed);
         if (valid.length > 0) {
+          if (valid.length < parsed.length) {
+            persistProjectsToLocalStorageSync(valid);
+          }
           return { projects: valid, fromStorage: true };
         }
       }
@@ -78,17 +104,19 @@ export function saveActiveProjectId(projectId: string): void {
   }
 }
 
-export function loadActiveTabSync(): 'audit' | 'overview' {
+export type AppTab = 'audit' | 'overview' | 'entity';
+
+export function loadActiveTabSync(): AppTab {
   try {
     const saved = localStorage.getItem(ACTIVE_TAB_KEY);
-    if (saved === 'audit' || saved === 'overview') return saved;
+    if (saved === 'audit' || saved === 'overview' || saved === 'entity') return saved;
   } catch {
     // Ignore
   }
   return 'audit';
 }
 
-export function saveActiveTab(tab: 'audit' | 'overview'): void {
+export function saveActiveTab(tab: AppTab): void {
   try {
     localStorage.setItem(ACTIVE_TAB_KEY, tab);
   } catch {
@@ -118,7 +146,11 @@ function openDeviceDb(): Promise<IDBDatabase | null> {
   });
 }
 
-async function writeProjectsToIndexedDB(projects: ConstructionProject[]): Promise<boolean> {
+let pendingIdbProjects: ConstructionProject[] | null = null;
+let pendingIdbResolvers: Array<(ok: boolean) => void> = [];
+let idbWriteRunning = false;
+
+async function writeSingleBatchToIndexedDB(projects: ConstructionProject[]): Promise<boolean> {
   const db = await openDeviceDb();
   if (!db) return false;
   return new Promise((resolve) => {
@@ -145,6 +177,35 @@ async function writeProjectsToIndexedDB(projects: ConstructionProject[]): Promis
   });
 }
 
+async function flushIdbWriteQueue(): Promise<void> {
+  if (idbWriteRunning) return;
+  idbWriteRunning = true;
+  try {
+    while (pendingIdbProjects !== null) {
+      const batch = pendingIdbProjects;
+      const resolvers = pendingIdbResolvers;
+      pendingIdbProjects = null;
+      pendingIdbResolvers = [];
+      const ok = await writeSingleBatchToIndexedDB(batch);
+      resolvers.forEach((r) => r(ok));
+    }
+  } finally {
+    idbWriteRunning = false;
+  }
+}
+
+function writeProjectsToIndexedDB(
+  projects: ConstructionProject[],
+  alreadyClean = false
+): Promise<boolean> {
+  const clean = alreadyClean ? projects : deduplicateProjectsById(projects);
+  return new Promise((resolve) => {
+    pendingIdbProjects = clean;
+    pendingIdbResolvers.push(resolve);
+    void flushIdbWriteQueue();
+  });
+}
+
 export async function readProjectsFromIndexedDB(): Promise<ConstructionProject[] | null> {
   const db = await openDeviceDb();
   if (!db) return null;
@@ -157,7 +218,10 @@ export async function readProjectsFromIndexedDB(): Promise<ConstructionProject[]
         db.close();
         const res = req.result;
         if (Array.isArray(res) && res.length > 0) {
-          const valid = res.filter(isValidProjectShape);
+          const valid = deduplicateProjectsById(res);
+          if (valid.length > 0 && valid.length < res.length) {
+            void writeProjectsToIndexedDB(valid, true);
+          }
           resolve(valid.length > 0 ? valid : null);
           return;
         }
@@ -179,10 +243,12 @@ export function getLatestProjectTimestamp(projects: ConstructionProject[]): numb
 }
 
 export function persistProjectsToLocalStorageSync(
-  projects: ConstructionProject[]
+  projects: ConstructionProject[],
+  alreadyClean = false
 ): boolean {
   try {
-    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+    const clean = alreadyClean ? projects : deduplicateProjectsById(projects);
+    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(clean));
     return true;
   } catch {
     return false;
@@ -190,10 +256,14 @@ export function persistProjectsToLocalStorageSync(
 }
 
 export async function persistProjectsToDevice(
-  projects: ConstructionProject[]
+  projects: ConstructionProject[],
+  options: { skipLocalStorage?: boolean; alreadyClean?: boolean } = {}
 ): Promise<{ ok: boolean; usedIndexedDbOnly: boolean }> {
-  const lsOk = persistProjectsToLocalStorageSync(projects);
-  const idbOk = await writeProjectsToIndexedDB(projects);
+  const clean = options.alreadyClean ? projects : deduplicateProjectsById(projects);
+  const lsOk = options.skipLocalStorage
+    ? true
+    : persistProjectsToLocalStorageSync(clean, true);
+  const idbOk = await writeProjectsToIndexedDB(clean, true);
   return {
     ok: lsOk || idbOk,
     usedIndexedDbOnly: !lsOk && idbOk,
@@ -272,7 +342,7 @@ export async function parseLocalDeviceBackupFile(file: File): Promise<Constructi
     }
   }
 
-  const validProjects = list.filter(isValidProjectShape);
+  const validProjects = deduplicateProjectsById(list);
   if (validProjects.length === 0) {
     throw new Error('No valid SitePro project records were found in this backup file.');
   }

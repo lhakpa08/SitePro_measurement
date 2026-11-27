@@ -1,6 +1,14 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ConstructionProject, GpsCoordinate, InputLocationPoint, PostType } from '../types';
-import { getProjectSettings, formatChainage, parseChainage, calculateDistanceMeters } from '../utils/geo';
+import {
+  getProjectSettings,
+  formatChainage,
+  parseChainage,
+  calculateDistanceMeters,
+  getUnitLabels,
+  isAreaUnit,
+  isLengthUnit,
+} from '../utils/geo';
 import { computeMeasurements, roundTo } from '../utils/calculations';
 import { StaticMapScope } from '../utils/staticMap';
 import { 
@@ -47,9 +55,9 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   onCaptureGps,
   currentGps,
 }) => {
-  const settings = getProjectSettings(project);
+  const settings = useMemo(() => getProjectSettings(project), [project]);
   const { items, customItems } = settings;
-  const enabledCustomItems = customItems.filter(c => c.enabled);
+  const enabledCustomItems = useMemo(() => customItems.filter(c => c.enabled), [customItems]);
 
   const [bulkAngleQty, setBulkAngleQty] = useState<string>('10');
   const [collapsedFields, setCollapsedFields] = useState<Record<string, boolean>>({ toolbar: false });
@@ -139,9 +147,9 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     };
   }, [flushAuditNotes]);
 
-  const lengthUnit = settings.unitSystem === 'imperial' ? 'ft' : 'm';
-  const areaUnit = settings.unitSystem === 'imperial' ? 'ft²' : 'm²';
-  const volumeUnit = settings.unitSystem === 'imperial' ? 'ft³' : 'm³';
+  const { lengthUnit, areaUnit, volumeUnit } = useMemo(() => getUnitLabels(settings), [settings]);
+  const meshUnitIsArea = isAreaUnit(items.chainLinkMesh.unit);
+  const rrmUnitIsLength = isLengthUnit(items.rrmWall.unit);
 
   const allFieldIds: string[] = [
     ...(items.anglePosts.enabled ? ['angle_post'] : []),
@@ -172,9 +180,9 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     };
   }, [fullscreenCardId]);
 
-  const isFieldCollapsed = (id: string) => collapsedFields[id] !== false;
+  const isFieldCollapsed = (id: string) => collapsedFields[id] === true;
   const toggleField = (id: string) => {
-    setCollapsedFields(prev => ({ ...prev, [id]: prev[id] === false }));
+    setCollapsedFields(prev => ({ ...prev, [id]: prev[id] !== true }));
   };
 
   const toggleFullScreen = (id: string) => {
@@ -188,7 +196,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   const getCardContainerClass = (id: string, extra = '') =>
     fullscreenCardId === id
       ? 'fixed inset-0 z-[45] bg-white p-5 sm:p-8 overflow-y-auto flex flex-col gap-4 transition-all'
-      : `bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 flex flex-col gap-4 transition-all ${extra}`.trim();
+      : `bg-white rounded-xl p-5 border border-slate-200 flex flex-col gap-4 transition-all ${extra}`.trim();
 
   const allCollapsed = allFieldIds.length > 0 && allFieldIds.every(id => isFieldCollapsed(id));
   const handleToggleAllFields = () => {
@@ -200,11 +208,19 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   };
 
   const updateCounts = (updates: Partial<ConstructionProject>) => {
-    onUpdateProject({
-      ...project,
-      ...updates,
-      updatedAt: Date.now(),
-    });
+    if (onPatchProject) {
+      onPatchProject(project.id, (latest) => ({
+        ...latest,
+        ...updates,
+        updatedAt: Date.now(),
+      }));
+    } else {
+      onUpdateProject({
+        ...project,
+        ...updates,
+        updatedAt: Date.now(),
+      });
+    }
   };
 
   const lastCaptureRef = useRef<{ fieldKey: string; time: number } | null>(null);
@@ -335,16 +351,17 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     [project, onCaptureGps, currentGps, onPatchProject, onUpdateProject]
   );
 
-  const getLatestInputPin = (fieldKey: string): InputLocationPoint | undefined => {
+  const latestInputPinsByField = useMemo(() => {
+    const map = new Map<string, InputLocationPoint>();
     const list = project.inputLocations || [];
-    for (let i = list.length - 1; i >= 0; i--) {
-      if (list[i].fieldKey === fieldKey) return list[i];
+    for (let i = 0; i < list.length; i++) {
+      map.set(list[i].fieldKey, list[i]);
     }
-    return undefined;
-  };
+    return map;
+  }, [project.inputLocations]);
 
   const renderCapturedPinHint = (fieldKey: string) => {
-    const pin = getLatestInputPin(fieldKey);
+    const pin = latestInputPinsByField.get(fieldKey);
     if (!pin) return null;
     return (
       <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 bg-slate-50 border border-slate-200/70 rounded-lg px-2.5 py-1.5 tabular-nums">
@@ -359,7 +376,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     );
   };
 
-  const m = computeMeasurements(project);
+  const m = useMemo(() => computeMeasurements(project), [project]);
   const anglePostsCount = m.totalAngle;
   const interPostsCount = m.totalIntermed;
   const strutPostsCount = m.totalStrut;
@@ -388,30 +405,35 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
   const handleAdjustPost = (postType: PostType, delta: number) => {
     if (window.navigator?.vibrate) window.navigator.vibrate(35);
-    const current = [...project.fencePosts];
     const countToChange = Math.abs(Math.trunc(delta));
     if (countToChange === 0) return;
 
+    let nextPosts = project.fencePosts;
     if (delta > 0) {
       const baseTime = Date.now();
-      for (let i = 0; i < countToChange; i++) {
-        current.push({
-          id: `post-${baseTime}-${i}-${Math.random().toString(36).substring(2, 6)}`,
-          postNumber: current.length + 1,
-          postType,
-          heightMeters: settings.defaultPostHeight,
-          gps: currentGps ? { lat: currentGps.lat, lng: currentGps.lng, accuracy: currentGps.accuracy } : undefined,
-          createdAt: baseTime,
-        });
+      const added = Array.from({ length: countToChange }, (_, i) => ({
+        id: `post-${baseTime}-${i}-${Math.random().toString(36).substring(2, 6)}`,
+        postNumber: nextPosts.length + i + 1,
+        postType,
+        heightMeters: settings.defaultPostHeight,
+        gps: currentGps ? { lat: currentGps.lat, lng: currentGps.lng, accuracy: currentGps.accuracy } : undefined,
+        createdAt: baseTime,
+      }));
+      nextPosts = [...nextPosts, ...added];
+    } else if (nextPosts.length > 0) {
+      let remainingToRemove = countToChange;
+      const reversedKept: typeof nextPosts = [];
+      for (let i = nextPosts.length - 1; i >= 0; i--) {
+        if (remainingToRemove > 0 && nextPosts[i].postType === postType) {
+          remainingToRemove -= 1;
+        } else {
+          reversedKept.push(nextPosts[i]);
+        }
       }
-    } else if (current.length > 0) {
-      for (let i = 0; i < countToChange; i++) {
-        const idx = current.map(p => p.postType).lastIndexOf(postType);
-        if (idx === -1) break;
-        current.splice(idx, 1);
-      }
+      reversedKept.reverse();
+      nextPosts = reversedKept;
     }
-    updateCounts({ fencePosts: current });
+    updateCounts({ fencePosts: nextPosts });
   };
 
   const handleSetMesh = (newLen: number) => {
@@ -442,7 +464,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   };
 
   const handleSetMeshWidth = (newWidth: number) => {
-    const safeW = Math.max(0, newWidth);
+    const safeW = roundTo(Math.max(0, Number.isFinite(newWidth) ? newWidth : 0), 4);
     const current = [...project.fenceMeshSegments];
     if (current.length === 0) {
       current.push({
@@ -603,7 +625,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   };
 
   const handleSetRoadWidth = (w: number) => {
-    const safeW = Math.max(0, w);
+    const safeW = roundTo(Math.max(0, Number.isFinite(w) ? w : 0), 4);
     setRoadWidthText(String(safeW));
     const current = ensureRoadSection();
     current[0] = { ...current[0], widthMeters: safeW, widthEntries: undefined };
@@ -611,7 +633,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   };
 
   const handleSetRoadDepth = (d: number) => {
-    const safeD = Math.max(0, d);
+    const safeD = roundTo(Math.max(0, Number.isFinite(d) ? d : 0), 4);
     setRoadDepthText(String(safeD));
     const current = ensureRoadSection();
     current[0] = { ...current[0], earthworkCutDepthMeters: safeD, depthEntries: undefined };
@@ -835,7 +857,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   const anyEnabled = anyStandardEnabled || enabledCustomItems.length > 0;
 
   const inputClass =
-    'w-full px-3 py-2.5 min-h-[44px] bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm font-semibold text-slate-900 tabular-nums focus:outline-none focus:bg-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition';
+    'w-full px-3 py-2 min-h-[42px] bg-white border border-slate-200 rounded-lg text-base sm:text-sm font-semibold text-slate-900 tabular-nums focus:outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 transition';
 
   const renderCardHeader = (
     fieldId: string,
@@ -962,7 +984,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         void captureLocationForInput(postType, title, `${count + qty} ${unit}`);
                         handleAdjustPost(postType, qty);
                       }}
-                      className="min-h-[44px] py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl tabular-nums active:scale-[0.97] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+                      className="min-h-[40px] py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg tabular-nums active:scale-[0.97] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
                     >
                       +{qty}
                     </button>
@@ -991,7 +1013,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         handleAdjustPost(postType, qty);
                       }
                     }}
-                    className="min-h-[44px] px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold rounded-xl transition duration-150 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    className="min-h-[42px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition duration-150 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
                   >
                     <Plus className="w-4 h-4" />
                     <span>Add Bulk</span>
@@ -1019,33 +1041,33 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-4 max-w-4xl mx-auto">
+    <div className="space-y-5 pb-4 max-w-5xl mx-auto">
       
       {/* Field Workstation Toolbar Card */}
       <div
         className={
           fullscreenCardId === 'toolbar'
             ? 'fixed inset-0 z-[45] bg-white p-5 sm:p-8 overflow-y-auto space-y-4 transition-all'
-            : 'bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90 space-y-4 text-[9px] transition-all'
+            : 'bg-white rounded-xl p-5 border border-slate-200 space-y-4 transition-all'
         }
       >
-        <div className="flex flex-col gap-3.5 text-[7px]">
+        <div className="flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
             <button
               type="button"
               onClick={() => toggleField('toolbar')}
               aria-expanded={!isFieldCollapsed('toolbar')}
-              className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xl"
+              className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 rounded-lg"
             >
               <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight truncate group-hover:text-slate-700 transition">
                 Field Measurement Worksheet
               </h2>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mt-1">
-                <span>{project.name}</span>
+                <span className="font-medium text-slate-700">{project.name}</span>
                 <span aria-hidden="true">&middot;</span>
                 <span className="capitalize">{settings.unitSystem} units</span>
                 <span aria-hidden="true">&middot;</span>
-                <span className="tabular-nums font-medium text-slate-700">
+                <span className="tabular-nums text-slate-600">
                   {totalEnabledPosts} posts &middot; {totalMeshLength} {items.chainLinkMesh.unit} mesh &middot; {roadLen} {items.roadMeasurement.unit} road
                 </span>
               </div>
@@ -1058,7 +1080,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                 aria-label={fullscreenCardId === 'toolbar' ? 'Exit full screen for Field Measurement Worksheet' : 'Extend Field Measurement Worksheet to full screen'}
                 aria-pressed={fullscreenCardId === 'toolbar'}
                 title={fullscreenCardId === 'toolbar' ? 'Restore card size (Esc)' : 'Extend to full screen'}
-                className={`w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                className={`w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 ${
                   fullscreenCardId === 'toolbar'
                     ? 'bg-slate-900 text-white hover:bg-slate-800'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
@@ -1073,7 +1095,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                 aria-expanded={!isFieldCollapsed('toolbar')}
                 aria-label={isFieldCollapsed('toolbar') ? 'Expand Field Measurement Worksheet' : 'Collapse Field Measurement Worksheet'}
                 title={isFieldCollapsed('toolbar') ? 'Expand card' : 'Collapse card'}
-                className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
               >
                 <ChevronDown
                   className={`w-4 h-4 transition-transform duration-200 ${isFieldCollapsed('toolbar') ? '-rotate-90' : 'rotate-0'}`}
@@ -1083,8 +1105,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
           </div>
 
           {!isFieldCollapsed('toolbar') && (
-            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 pt-3 border-t border-slate-100">
+              <div className="flex items-center gap-2 w-full lg:w-auto">
                 <select
                   value={project.id}
                   onChange={(e) => {
@@ -1092,9 +1114,9 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                     if (found) onSwitchProject(found);
                   }}
                   aria-label="Select site"
-                  className="flex-1 sm:flex-none min-w-0 min-h-[44px] px-3 py-2 bg-slate-50 text-slate-800 text-base sm:text-xs font-semibold rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                  className="flex-1 sm:flex-none min-w-0 min-h-[40px] px-3 py-1.5 bg-slate-50 text-slate-800 text-sm sm:text-xs font-semibold rounded-lg border border-slate-200 focus:outline-none focus:border-slate-900"
                 >
-                  {savedProjects.map(p => (
+                  {Array.from(new Map(savedProjects.map((p) => [p.id, p])).values()).map(p => (
                     <option key={p.id} value={p.id}>Site: {p.name}</option>
                   ))}
                 </select>
@@ -1102,9 +1124,9 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                 <button
                   type="button"
                   onClick={onOpenSiteManager}
-                  className="min-h-[44px] px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                  className="min-h-[40px] px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                 >
-                  <Building2 className="w-4 h-4 text-slate-600" />
+                  <Building2 className="w-3.5 h-3.5 text-slate-500" />
                   <span>Sites</span>
                 </button>
               </div>
@@ -1113,9 +1135,9 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                 <button
                   type="button"
                   onClick={onOpenSettings}
-                  className="min-h-[44px] px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                  className="min-h-[40px] px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                 >
-                  <Settings className="w-4 h-4" />
+                  <Settings className="w-3.5 h-3.5 text-slate-500" />
                   <span>Units &amp; Items</span>
                 </button>
 
@@ -1123,10 +1145,10 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   <button
                     type="button"
                     onClick={handleToggleAllFields}
-                    className="min-h-[44px] px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    className="min-h-[40px] px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                     title={allCollapsed ? 'Expand all measurement fields' : 'Collapse all measurement fields'}
                   >
-                    <ChevronsUpDown className="w-4 h-4 text-slate-600" />
+                    <ChevronsUpDown className="w-3.5 h-3.5 text-slate-500" />
                     <span>{allCollapsed ? 'Expand All' : 'Collapse All'}</span>
                   </button>
                 )}
@@ -1134,29 +1156,29 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => exportProjectToExcel(project)}
-                  className="min-h-[44px] px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                  className="min-h-[40px] px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                   title="Export Excel CSV"
                 >
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Excel</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => (onOpenReport ? onOpenReport('all') : exportProjectToPdf(project, currentGps))}
-                  className="min-h-[44px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                  className="min-h-[40px] px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>PDF / Report</span>
+                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                  <span>PDF Report</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handleSaveRecordedData}
-                  className="col-span-2 sm:col-span-1 min-h-[44px] px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-950 text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.98]"
+                  className="col-span-2 sm:col-span-1 min-h-[40px] px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.98]"
                   title="Save all recorded measurements and notes"
                 >
-                  <Save className="w-4 h-4" />
+                  <Save className="w-3.5 h-3.5 text-amber-400" />
                   <span>Save Data</span>
                 </button>
               </div>
@@ -1231,10 +1253,13 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   <div className="flex items-center justify-between bg-slate-50/90 p-4 rounded-xl">
                     <div className="text-center w-full">
                       <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 tabular-nums tracking-tight">
-                        {totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-base font-medium text-slate-500">{items.chainLinkMesh.unit}</span>
+                        {meshUnitIsArea
+                          ? meshArea.toFixed(2)
+                          : totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+                        <span className="text-base font-medium text-slate-500">{items.chainLinkMesh.unit}</span>
                       </div>
                       <div className="text-xs text-slate-500 font-medium mt-1 tabular-nums">
-                        Width: {meshWidth}{lengthUnit} &middot; Area: {meshArea.toFixed(2)} {areaUnit}
+                        Length: {totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} {meshUnitIsArea ? lengthUnit : items.chainLinkMesh.unit} &middot; Width: {meshWidth}{lengthUnit} &middot; Area: {meshArea.toFixed(2)} {areaUnit}
                       </div>
                     </div>
                     {totalMeshLength > 0 && (
@@ -1252,7 +1277,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   <div className="grid grid-cols-2 gap-2.5">
                     <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">
-                        Length ({items.chainLinkMesh.unit})
+                        Length ({meshUnitIsArea ? lengthUnit : items.chainLinkMesh.unit})
                       </label>
                       <input
                         type="number"
@@ -1260,8 +1285,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         step="0.5"
                         min="0"
                         value={totalMeshLength}
-                        onFocus={() => void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Length', `${totalMeshLength} ${items.chainLinkMesh.unit}`)}
-                        onClick={() => void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Length', `${totalMeshLength} ${items.chainLinkMesh.unit}`)}
+                        onFocus={() => void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Length', `${totalMeshLength} ${lengthUnit}`)}
+                        onClick={() => void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Length', `${totalMeshLength} ${lengthUnit}`)}
                         onChange={(e) => handleSetMesh(parseFloat(e.target.value) || 0)}
                         className={inputClass}
                       />
@@ -1285,17 +1310,17 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   </div>
 
                   <div className="grid grid-cols-4 gap-2">
-                    {(items.chainLinkMesh.quickSteps || [1, 5, 10, 50]).slice(0, 4).map((step) => (
+                    {(items.chainLinkMesh.quickSteps || [1, 5, 10, 50]).slice(0, 4).map((step, idx) => (
                       <button
-                        key={step}
+                        key={`${step}-${idx}`}
                         type="button"
                         onClick={() => {
-                          void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Length', `${totalMeshLength + step} ${items.chainLinkMesh.unit}`);
+                          void captureLocationForInput('chainLinkMesh', 'Chain-Link Mesh Length', `${totalMeshLength + step} ${lengthUnit}`);
                           handleSetMesh(totalMeshLength + step);
                         }}
-                        className="min-h-[44px] py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl tabular-nums active:scale-[0.97] transition duration-150"
+                        className="min-h-[40px] py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg tabular-nums active:scale-[0.97] transition duration-150"
                       >
-                        +{step}{items.chainLinkMesh.unit}
+                        +{step}{meshUnitIsArea ? lengthUnit : items.chainLinkMesh.unit}
                       </button>
                     ))}
                   </div>
@@ -1312,7 +1337,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                 'rrmWall',
                 'RMM wall',
                 items.rrmWall.unit,
-                `Volume: ${totalRrmVol.toFixed(2)} ${items.rrmWall.unit} · L: ${rrmLen}${lengthUnit} × W: ${rrmWidth}${lengthUnit} × H: ${rrmHeight}${lengthUnit}`,
+                `${rrmUnitIsLength ? `Length: ${rrmLen}` : `Volume: ${totalRrmVol.toFixed(2)}`} ${items.rrmWall.unit} · L: ${rrmLen}${lengthUnit} × W: ${rrmWidth}${lengthUnit} × H: ${rrmHeight}${lengthUnit}`,
                 'Enter length, width, and height to compute wall masonry volume.'
               )}
 
@@ -1321,10 +1346,11 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   <div className="flex items-center justify-between bg-slate-50/90 p-4 rounded-xl">
                     <div className="text-center w-full">
                       <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 tabular-nums tracking-tight">
-                        {totalRrmVol.toFixed(2)} <span className="text-base font-medium text-slate-500">{items.rrmWall.unit}</span>
+                        {rrmUnitIsLength ? rrmLen.toFixed(2) : totalRrmVol.toFixed(2)}{' '}
+                        <span className="text-base font-medium text-slate-500">{items.rrmWall.unit}</span>
                       </div>
                       <div className="text-xs text-slate-500 font-medium mt-1 tabular-nums">
-                        L: {rrmLen}{lengthUnit} &middot; W: {rrmWidth}{lengthUnit} &middot; H: {rrmHeight}{lengthUnit}
+                        L: {rrmLen}{lengthUnit} &middot; W: {rrmWidth}{lengthUnit} &middot; H: {rrmHeight}{lengthUnit} &middot; Vol: {totalRrmVol.toFixed(2)} {volumeUnit}
                       </div>
                     </div>
                     {rrmLen > 0 && (
@@ -1391,15 +1417,15 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
-                    {(items.rrmWall.quickSteps || [1, 5, 10]).slice(0, 4).map((step) => (
+                    {(items.rrmWall.quickSteps || [1, 5, 10]).slice(0, 4).map((step, idx) => (
                       <button
-                        key={step}
+                        key={`${step}-${idx}`}
                         type="button"
                         onClick={() => {
                           void captureLocationForInput('rrmWall', 'RMM Wall Length', `${rrmLen + step} ${lengthUnit}`);
                           handleSetRrmDimensions({ lengthMeters: rrmLen + step });
                         }}
-                        className="min-h-[44px] py-2 px-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl tabular-nums whitespace-nowrap active:scale-[0.97] transition duration-150"
+                        className="min-h-[40px] py-2 px-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg tabular-nums whitespace-nowrap active:scale-[0.97] transition duration-150"
                       >
                         +{step}{lengthUnit}<span className="hidden sm:inline"> Length</span>
                       </button>
@@ -1587,15 +1613,15 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                    {(items.roadMeasurement.quickSteps || [10, 50, 100, 500]).slice(0, 4).map((step) => (
+                    {(items.roadMeasurement.quickSteps || [10, 50, 100, 500]).slice(0, 4).map((step, idx) => (
                       <button
-                        key={step}
+                        key={`${step}-${idx}`}
                         type="button"
                         onClick={() => {
                           void captureLocationForInput('roadMeasurement', 'Road Length', `${roadLen + step} ${items.roadMeasurement.unit}`);
                           handleSetRoadLen(roadLen + step);
                         }}
-                        className="min-h-[44px] py-2.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl tabular-nums whitespace-nowrap active:scale-[0.97] transition duration-150"
+                        className="min-h-[40px] py-2 px-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg tabular-nums whitespace-nowrap active:scale-[0.97] transition duration-150"
                       >
                         +{step}{items.roadMeasurement.unit}<span className="hidden sm:inline"> Length</span>
                       </button>
@@ -1748,15 +1774,15 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   />
 
                   <div className="grid grid-cols-4 gap-2">
-                    {(items.sideDrain.quickSteps || [10, 25, 50, 100]).slice(0, 4).map((step) => (
+                    {(items.sideDrain.quickSteps || [10, 25, 50, 100]).slice(0, 4).map((step, idx) => (
                       <button
-                        key={step}
+                        key={`${step}-${idx}`}
                         type="button"
                         onClick={() => {
                           void captureLocationForInput('sideDrain', 'Road Side Drain', `${sideDrainLen + step} ${items.sideDrain.unit}`);
                           handleSetSideDrain(sideDrainLen + step);
                         }}
-                        className="min-h-[44px] py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl tabular-nums whitespace-nowrap active:scale-[0.97] transition duration-150"
+                        className="min-h-[40px] py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg tabular-nums whitespace-nowrap active:scale-[0.97] transition duration-150"
                       >
                         +{step}{items.sideDrain.unit}
                       </button>
@@ -1808,7 +1834,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         handleSetCustomItemQty(item.id, nextVal);
                       }}
                       aria-label={`Increase ${item.name}`}
-                      className="w-12 h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition flex items-center justify-center active:scale-95"
+                      className="w-12 h-12 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl transition flex items-center justify-center active:scale-95"
                     >
                       <Plus className="w-5 h-5" />
                     </button>
@@ -1828,16 +1854,16 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
                   {item.quickSteps.length > 0 && (
                     <div className="grid grid-cols-3 gap-2">
-                      {item.quickSteps.slice(0, 3).map((step) => (
+                      {item.quickSteps.slice(0, 3).map((step, idx) => (
                         <button
-                          key={step}
+                          key={`${step}-${idx}`}
                           type="button"
                           onClick={() => {
                             const nextVal = item.quantity + step;
                             void captureLocationForInput(`custom:${item.id}`, item.name, `${nextVal} ${item.unit}`);
                             handleSetCustomItemQty(item.id, nextVal);
                           }}
-                          className="min-h-[44px] py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl tabular-nums active:scale-[0.97] transition duration-150"
+                          className="min-h-[40px] py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg tabular-nums active:scale-[0.97] transition duration-150"
                         >
                           +{step} {item.unit}
                         </button>

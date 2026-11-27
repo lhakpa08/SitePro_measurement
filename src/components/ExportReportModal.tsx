@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { ConstructionProject } from '../types';
-import { getProjectSettings, formatChainage } from '../utils/geo';
+import { getProjectSettings, formatChainage, isAreaUnit, isLengthUnit } from '../utils/geo';
 import { getProjectMapData, StaticMapScope } from '../utils/staticMap';
 import {
   buildMeasuredSummaryRows,
@@ -12,7 +12,13 @@ import {
   exportRoadPdf,
   formatAuditStatus,
 } from '../utils/export';
-import { cleanVariance, computeEntityAuditComparisons, formatVariance, roundTo } from '../utils/calculations';
+import {
+  cleanVariance,
+  computeEntityAuditComparisons,
+  formatDiffLabel,
+  formatVariance,
+  roundTo,
+} from '../utils/calculations';
 import { SiteReportMap } from './SiteReportMap';
 import { X, Printer, FileSpreadsheet, Globe, MapPin } from 'lucide-react';
 
@@ -44,21 +50,176 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
-  const settings = getProjectSettings(project);
+  const settings = useMemo(() => getProjectSettings(project), [project]);
   const { items, customItems } = settings;
-  const m = computeMeasurements(project, scope);
-  const measuredRows = buildMeasuredSummaryRows(project, scope);
-  const mapData = getProjectMapData(project, scope);
-  const totalMappedPts = mapData.allPoints.length + (currentGps ? 1 : 0);
 
-  const enabledCustom = customItems.filter((c) => {
-    if (!c.enabled || !(c.quantity > 0)) return false;
-    if (scope === 'fencing') return c.category === 'fencing';
-    if (scope === 'road') return c.category === 'road';
-    return true;
-  });
+  const computed = useMemo(() => {
+    if (!isOpen) return null;
+
+    const m = computeMeasurements(project, scope);
+    const measuredRows = buildMeasuredSummaryRows(project, scope);
+    const mapData = getProjectMapData(project, scope);
+    const totalMappedPts = mapData.allPoints.length + (currentGps ? 1 : 0);
+
+    const enabledCustom = customItems.filter((c) => {
+      if (!c.enabled || !(c.quantity > 0)) return false;
+      if (scope === 'fencing') return c.category === 'fencing';
+      if (scope === 'road') return c.category === 'road';
+      return true;
+    });
+
+    const totalBadges = [
+      scope !== 'road' && m.totalPosts > 0 ? `Posts: ${m.totalPosts} ${m.postUnit}` : null,
+      m.totalAllLengths > 0
+        ? `Linear: ${m.totalAllLengths.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${m.lengthUnit}`
+        : null,
+      m.totalAllAreas > 0 ? `Area: ${m.totalAllAreas.toFixed(2)} ${m.areaUnit}` : null,
+      m.totalAllVolumes > 0 ? `Volume: ${m.totalAllVolumes.toFixed(2)} ${m.volumeUnit}` : null,
+      enabledCustom.length > 0 ? `Custom: ${m.totalCustomQty}` : null,
+    ].filter((v): v is string => Boolean(v));
+
+    const entityComparisons = computeEntityAuditComparisons(project, scope).filter(
+      (row) =>
+        row.item.nos !== undefined ||
+        row.item.length !== undefined ||
+        row.item.width !== undefined ||
+        row.item.thickness !== undefined ||
+        row.item.auditNos !== undefined ||
+        row.item.auditLength !== undefined ||
+        row.item.auditWidth !== undefined ||
+        row.item.auditThickness !== undefined ||
+        row.item.verifiedOverride !== undefined ||
+        (row.item.rate !== undefined && row.item.rate > 0) ||
+        row.entityQty > 0
+    );
+
+    const hasAnyRates = entityComparisons.some((r) => r.rate !== undefined && r.rate > 0);
+    const totalEntityAmount = roundTo(
+      entityComparisons.reduce((sum, r) => sum + (r.entityAmount ?? 0), 0),
+      2
+    );
+    const totalAuditAmount = roundTo(
+      entityComparisons.reduce((sum, r) => sum + (r.auditAmount ?? 0), 0),
+      2
+    );
+    let netOutcome: 'excess' | 'underpayment' | 'matched' = 'matched';
+    let netDiff = 0;
+    if (totalEntityAmount > totalAuditAmount) {
+      netOutcome = 'excess';
+      netDiff = roundTo(totalEntityAmount - totalAuditAmount, 2);
+    } else if (totalAuditAmount > totalEntityAmount) {
+      netOutcome = 'underpayment';
+      netDiff = roundTo(totalAuditAmount - totalEntityAmount, 2);
+    }
+
+    const auditRows: Array<{ label: string; logged: string; verified: string; variance: string }> = [];
+    if (scope === 'all' && project.auditInfo) {
+      const a = project.auditInfo;
+      const anyPosts =
+        items.anglePosts.enabled ||
+        items.intermediatePosts.enabled ||
+        items.strutPosts.enabled ||
+        items.gatePosts.enabled;
+      if (anyPosts && (m.totalPosts > 0 || (a.verifiedPostCount ?? 0) > 0)) {
+        const vp = a.verifiedPostCount ?? m.totalPosts;
+        const diff = cleanVariance(vp, m.totalPosts, 0);
+        auditRows.push({
+          label: 'Fence Posts Total',
+          logged: `${m.totalPosts} ${m.postUnit}`,
+          verified: `${vp} ${m.postUnit}`,
+          variance: `${formatVariance(diff, 0)} ${m.postUnit}`,
+        });
+      }
+      const meshUnitIsArea = isAreaUnit(items.chainLinkMesh.unit);
+      const loggedMesh = roundTo(meshUnitIsArea ? m.meshArea : m.meshLen, 2);
+      if (items.chainLinkMesh.enabled && (loggedMesh > 0 || (a.verifiedMeshLength ?? 0) > 0)) {
+        const vm = a.verifiedMeshLength ?? loggedMesh;
+        const diff = cleanVariance(vm, loggedMesh, 2);
+        auditRows.push({
+          label: meshUnitIsArea ? 'Chain-Link Mesh Area' : 'Chain-Link Mesh Length',
+          logged: `${loggedMesh} ${items.chainLinkMesh.unit}`,
+          verified: `${vm} ${items.chainLinkMesh.unit}`,
+          variance: `${formatVariance(diff, 2)} ${items.chainLinkMesh.unit}`,
+        });
+      }
+      const rrmUnitIsLength = isLengthUnit(items.rrmWall.unit);
+      const loggedRrm = roundTo(rrmUnitIsLength ? m.rrmLen : m.rrmVol, 2);
+      if (items.rrmWall.enabled && (loggedRrm > 0 || (a.verifiedRrmVolume ?? 0) > 0)) {
+        const vr = a.verifiedRrmVolume ?? loggedRrm;
+        const diff = cleanVariance(vr, loggedRrm, 2);
+        auditRows.push({
+          label: rrmUnitIsLength ? 'RMM Wall Length' : 'RMM Wall Volume',
+          logged: `${loggedRrm.toFixed(2)} ${items.rrmWall.unit}`,
+          verified: `${vr.toFixed(2)} ${items.rrmWall.unit}`,
+          variance: `${formatVariance(diff, 2)} ${items.rrmWall.unit}`,
+        });
+      }
+      if (items.roadMeasurement.enabled && (m.roadLen > 0 || (a.verifiedRoadLength ?? 0) > 0)) {
+        const vrd = a.verifiedRoadLength ?? m.roadLen;
+        const diff = cleanVariance(vrd, m.roadLen, 2);
+        auditRows.push({
+          label: 'Road Length',
+          logged: `${m.roadLen} ${items.roadMeasurement.unit}`,
+          verified: `${vrd} ${items.roadMeasurement.unit}`,
+          variance: `${formatVariance(diff, 2)} ${items.roadMeasurement.unit}`,
+        });
+      }
+      if (items.sideDrain.enabled && (m.sideDrainLen > 0 || (a.verifiedSideDrainLength ?? 0) > 0)) {
+        const vsd = a.verifiedSideDrainLength ?? m.sideDrainLen;
+        const diff = cleanVariance(vsd, m.sideDrainLen, 2);
+        auditRows.push({
+          label: 'Road Side Drain',
+          logged: `${m.sideDrainLen} ${items.sideDrain.unit}`,
+          verified: `${vsd} ${items.sideDrain.unit}`,
+          variance: `${formatVariance(diff, 2)} ${items.sideDrain.unit}`,
+        });
+      }
+      enabledCustom.forEach((c) => {
+        const vc = a.verifiedCustomItems?.[c.id] ?? c.quantity;
+        if (c.quantity > 0 || vc > 0) {
+          const diff = cleanVariance(vc, c.quantity, 2);
+          auditRows.push({
+            label: c.name,
+            logged: `${c.quantity} ${c.unit}`,
+            verified: `${vc} ${c.unit}`,
+            variance: `${formatVariance(diff, 2)} ${c.unit}`,
+          });
+        }
+      });
+    }
+
+    return {
+      m,
+      measuredRows,
+      mapData,
+      totalMappedPts,
+      totalBadges,
+      entityComparisons,
+      hasAnyRates,
+      totalEntityAmount,
+      totalAuditAmount,
+      netOutcome,
+      netDiff,
+      auditRows,
+    };
+  }, [isOpen, project, scope, currentGps, customItems, items]);
+
+  if (!isOpen || !computed) return null;
+
+  const {
+    m,
+    measuredRows,
+    mapData,
+    totalMappedPts,
+    totalBadges,
+    entityComparisons,
+    hasAnyRates,
+    totalEntityAmount,
+    totalAuditAmount,
+    netOutcome,
+    netDiff,
+    auditRows,
+  } = computed;
 
   const handlePrintPdf = () => {
     if (scope === 'fencing') {
@@ -69,117 +230,6 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
       exportProjectToPdf(project, currentGps);
     }
   };
-
-  const totalBadges = [
-    scope !== 'road' && m.totalPosts > 0 ? `Posts: ${m.totalPosts} ${m.postUnit}` : null,
-    m.totalAllLengths > 0
-      ? `Linear: ${m.totalAllLengths.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${m.lengthUnit}`
-      : null,
-    m.totalAllAreas > 0 ? `Area: ${m.totalAllAreas.toFixed(2)} ${m.areaUnit}` : null,
-    m.totalAllVolumes > 0 ? `Volume: ${m.totalAllVolumes.toFixed(2)} ${m.volumeUnit}` : null,
-    enabledCustom.length > 0 ? `Custom: ${m.totalCustomQty}` : null,
-  ].filter((v): v is string => Boolean(v));
-
-  const entityComparisons = computeEntityAuditComparisons(project, scope).filter(
-    (row) =>
-      row.item.nos !== undefined ||
-      row.item.length !== undefined ||
-      row.item.width !== undefined ||
-      row.item.thickness !== undefined ||
-      row.item.verifiedOverride !== undefined ||
-      row.entityQty > 0
-  );
-
-  const hasAnyRates = entityComparisons.some((r) => r.rate !== undefined && r.rate > 0);
-  const totalEntityAmount = roundTo(
-    entityComparisons.reduce((sum, r) => sum + (r.entityAmount ?? 0), 0),
-    2
-  );
-  const totalAuditAmount = roundTo(
-    entityComparisons.reduce((sum, r) => sum + (r.auditAmount ?? 0), 0),
-    2
-  );
-  let netOutcome: 'excess' | 'underpayment' | 'matched' = 'matched';
-  let netDiff = 0;
-  if (totalEntityAmount > totalAuditAmount) {
-    netOutcome = 'excess';
-    netDiff = roundTo(totalEntityAmount - totalAuditAmount, 2);
-  } else if (totalAuditAmount > totalEntityAmount) {
-    netOutcome = 'underpayment';
-    netDiff = roundTo(totalAuditAmount - totalEntityAmount, 2);
-  }
-
-  const auditRows: Array<{ label: string; logged: string; verified: string; variance: string }> = [];
-  if (scope === 'all' && project.auditInfo) {
-    const a = project.auditInfo;
-    const anyPosts =
-      items.anglePosts.enabled ||
-      items.intermediatePosts.enabled ||
-      items.strutPosts.enabled ||
-      items.gatePosts.enabled;
-    if (anyPosts && (m.totalPosts > 0 || (a.verifiedPostCount ?? 0) > 0)) {
-      const vp = a.verifiedPostCount ?? m.totalPosts;
-      const diff = cleanVariance(vp, m.totalPosts, 0);
-      auditRows.push({
-        label: 'Fence Posts Total',
-        logged: `${m.totalPosts} ${m.postUnit}`,
-        verified: `${vp} ${m.postUnit}`,
-        variance: `${formatVariance(diff, 0)} ${m.postUnit}`,
-      });
-    }
-    if (items.chainLinkMesh.enabled && (m.meshLen > 0 || (a.verifiedMeshLength ?? 0) > 0)) {
-      const vm = a.verifiedMeshLength ?? m.meshLen;
-      const diff = cleanVariance(vm, m.meshLen, 2);
-      auditRows.push({
-        label: 'Chain-Link Mesh Length',
-        logged: `${m.meshLen} ${items.chainLinkMesh.unit}`,
-        verified: `${vm} ${items.chainLinkMesh.unit}`,
-        variance: `${formatVariance(diff, 2)} ${items.chainLinkMesh.unit}`,
-      });
-    }
-    if (items.rrmWall.enabled && (m.rrmVol > 0 || (a.verifiedRrmVolume ?? 0) > 0)) {
-      const vr = a.verifiedRrmVolume ?? roundTo(m.rrmVol, 2);
-      const diff = cleanVariance(vr, roundTo(m.rrmVol, 2), 2);
-      auditRows.push({
-        label: 'RMM Wall Volume',
-        logged: `${m.rrmVol.toFixed(2)} ${items.rrmWall.unit}`,
-        verified: `${vr.toFixed(2)} ${items.rrmWall.unit}`,
-        variance: `${diff > 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)} ${items.rrmWall.unit}`,
-      });
-    }
-    if (items.roadMeasurement.enabled && (m.roadLen > 0 || (a.verifiedRoadLength ?? 0) > 0)) {
-      const vrd = a.verifiedRoadLength ?? m.roadLen;
-      const diff = cleanVariance(vrd, m.roadLen, 2);
-      auditRows.push({
-        label: 'Road Length',
-        logged: `${m.roadLen} ${items.roadMeasurement.unit}`,
-        verified: `${vrd} ${items.roadMeasurement.unit}`,
-        variance: `${formatVariance(diff, 2)} ${items.roadMeasurement.unit}`,
-      });
-    }
-    if (items.sideDrain.enabled && (m.sideDrainLen > 0 || (a.verifiedSideDrainLength ?? 0) > 0)) {
-      const vsd = a.verifiedSideDrainLength ?? m.sideDrainLen;
-      const diff = cleanVariance(vsd, m.sideDrainLen, 2);
-      auditRows.push({
-        label: 'Road Side Drain',
-        logged: `${m.sideDrainLen} ${items.sideDrain.unit}`,
-        verified: `${vsd} ${items.sideDrain.unit}`,
-        variance: `${formatVariance(diff, 2)} ${items.sideDrain.unit}`,
-      });
-    }
-    enabledCustom.forEach((c) => {
-      const vc = a.verifiedCustomItems?.[c.id] ?? c.quantity;
-      if (c.quantity > 0 || vc > 0) {
-        const diff = cleanVariance(vc, c.quantity, 2);
-        auditRows.push({
-          label: c.name,
-          logged: `${c.quantity} ${c.unit}`,
-          verified: `${vc} ${c.unit}`,
-          variance: `${formatVariance(diff, 2)} ${c.unit}`,
-        });
-      }
-    });
-  }
 
   let nextSec = 1;
   const summarySecNum = nextSec++;
@@ -409,21 +459,28 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
                 {hasAnyRates && (
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold">
                     <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200">
-                      Claimed: <strong className="text-slate-900 font-mono">${totalEntityAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                      Claimed: <strong className="text-slate-900 font-mono">{totalEntityAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                     </span>
                     <span className="bg-indigo-50 text-indigo-800 px-2 py-0.5 rounded-md border border-indigo-200">
-                      Verified: <strong className="text-indigo-950 font-mono">${totalAuditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                      Verified: <strong className="text-indigo-950 font-mono">{totalAuditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded-md border font-mono ${
-                        (totalAmountVariance ?? 0) < 0
+                        netOutcome === 'excess'
                           ? 'bg-red-50 text-red-700 border-red-200'
-                          : (totalAmountVariance ?? 0) > 0
+                          : netOutcome === 'underpayment'
                           ? 'bg-blue-50 text-blue-700 border-blue-200'
                           : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       }`}
                     >
-                      Cost Var: <strong>{totalAmountVariance !== null ? formatVariance(totalAmountVariance, 2) : '—'}</strong>
+                      Outcome:{' '}
+                      <strong>
+                        {netOutcome === 'excess'
+                          ? `${netDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Excess`
+                          : netOutcome === 'underpayment'
+                          ? `${netDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Underpayment`
+                          : '0.00 Matched'}
+                      </strong>
                     </span>
                   </div>
                 )}
@@ -483,14 +540,8 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
                   <tbody className="divide-y divide-slate-200 tabular-nums">
                     {entityComparisons.map((row, idx) => {
                       const unit = row.auditUnit || row.item.unit;
-                      const statusLabel =
-                        row.status === 'matched'
-                          ? 'Matched'
-                          : row.status === 'shortfall'
-                          ? 'Shortfall (Overclaimed)'
-                          : row.status === 'excess'
-                          ? 'Excess Verified'
-                          : 'Pending Audit';
+                      const diffInfo = formatDiffLabel(row.status, row.variance, unit, row.amountVariance);
+                      const statusLabel = diffInfo.badgeLabel;
 
                       const rateText = row.rate !== undefined ? `${row.rate}` : '—';
                       const entityAmtText =
@@ -543,39 +594,21 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
                           <td className="py-2 px-1.5 text-right font-mono font-bold text-indigo-800 whitespace-nowrap border-r border-indigo-200 bg-indigo-100/40">
                             {auditAmtText}
                           </td>
-                          <td
-                            className={`py-2 px-2 text-right font-bold whitespace-nowrap ${
-                              row.variance === null
-                                ? 'text-slate-500'
-                                : row.variance < 0
-                                ? 'text-red-600'
-                                : row.variance > 0
-                                ? 'text-blue-600'
-                                : 'text-emerald-700'
-                            }`}
-                          >
+                          <td className={`py-2 px-2 text-right font-bold whitespace-nowrap ${diffInfo.colorClass}`}>
                             {row.variance === null
                               ? 'Pending'
-                              : `${formatVariance(row.variance, 2)} ${unit}${
+                              : `${diffInfo.qtyText}${
                                   row.variancePct !== null && row.variance !== 0
                                     ? ` (${row.variancePct > 0 ? `+${row.variancePct}` : row.variancePct}%)`
                                     : ''
                                 }`}
                           </td>
-                          <td
-                            className={`py-2 px-2 text-right font-mono font-bold whitespace-nowrap ${
-                              row.amountVariance === null
-                                ? 'text-slate-500'
-                                : row.amountVariance < 0
-                                ? 'text-red-600'
-                                : row.amountVariance > 0
-                                ? 'text-blue-600'
-                                : 'text-emerald-700'
-                            }`}
-                          >
-                            {row.amountVariance !== null ? formatVariance(row.amountVariance, 2) : '—'}
+                          <td className={`py-2 px-2 text-right font-mono font-bold whitespace-nowrap ${diffInfo.colorClass}`}>
+                            {diffInfo.costText}
                           </td>
-                          <td className="py-2 px-2.5 text-slate-700 whitespace-nowrap text-[11px]">{statusLabel}</td>
+                          <td className={`py-2 px-2.5 whitespace-nowrap text-[11px] font-semibold ${diffInfo.colorClass}`}>
+                            {statusLabel}
+                          </td>
                         </tr>
                       );
                     })}
@@ -583,7 +616,7 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
                       <tr className="bg-indigo-50/70 font-extrabold text-slate-900 border-t-2 border-slate-800 tabular-nums">
                         <td className="py-2 px-2 text-center">&Sigma;</td>
                         <td colSpan={6} className="py-2 px-3 text-slate-900 uppercase text-[11px] tracking-wide">
-                          Total Financial Value &amp; Audit Recovery
+                          Total Financial Outcome (Excess / Underpayment)
                         </td>
                         <td className="py-2 px-1.5 text-right font-mono font-bold text-slate-900">
                           {totalEntityAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -594,17 +627,31 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
                         </td>
                         <td className="py-2 px-2"></td>
                         <td
-                          className={`py-2 px-2 text-right font-mono font-bold ${
-                            (totalAmountVariance ?? 0) < 0
+                          className={`py-2 px-2 text-right font-mono font-bold whitespace-nowrap ${
+                            netOutcome === 'excess'
                               ? 'text-red-600'
-                              : (totalAmountVariance ?? 0) > 0
+                              : netOutcome === 'underpayment'
                               ? 'text-blue-600'
                               : 'text-emerald-700'
                           }`}
                         >
-                          {totalAmountVariance !== null ? formatVariance(totalAmountVariance, 2) : '—'}
+                          {netOutcome === 'excess'
+                            ? `${netDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Excess`
+                            : netOutcome === 'underpayment'
+                            ? `${netDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Underpayment`
+                            : '0.00 Matched'}
                         </td>
-                        <td className="py-2 px-2"></td>
+                        <td
+                          className={`py-2 px-2 text-xs font-bold ${
+                            netOutcome === 'excess'
+                              ? 'text-red-600'
+                              : netOutcome === 'underpayment'
+                              ? 'text-blue-600'
+                              : 'text-emerald-700'
+                          }`}
+                        >
+                          {netOutcome === 'excess' ? 'Excess' : netOutcome === 'underpayment' ? 'Underpayment' : 'Matched'}
+                        </td>
                       </tr>
                     )}
                   </tbody>
@@ -678,6 +725,7 @@ export const ExportReportModal: React.FC<ExportReportModalProps> = ({
             </div>
 
             <SiteReportMap
+              key={project.id}
               project={project}
               currentGps={currentGps}
               onUpdateProject={onUpdateProject}

@@ -153,6 +153,7 @@ export interface EntityMeasurementItem {
   auditLength?: number;
   auditWidth?: number;
   auditThickness?: number;
+  auditManualOverride?: boolean;
   verifiedOverride?: number;
   remarks?: string;
   updatedAt: number;

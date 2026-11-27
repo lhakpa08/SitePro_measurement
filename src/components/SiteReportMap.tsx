@@ -17,7 +17,7 @@ import {
   ReportMapType,
   StaticMapScope,
 } from '../utils/staticMap';
-import { getProjectSettings, formatChainage, parseChainage } from '../utils/geo';
+import { getProjectSettings, getUnitLabels, formatChainage, parseChainage } from '../utils/geo';
 import {
   MapPin,
   Crosshair,
@@ -433,10 +433,9 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
   readOnly = false,
 }) => {
   const apiKey = getGoogleMapsApiKey();
-  const settings = getProjectSettings(project);
-  const isImperial = settings.unitSystem === 'imperial';
-  const lengthUnit = isImperial ? 'ft' : 'm';
-  const unitFactor = isImperial ? 3.28084 : 1.0;
+  const settings = useMemo(() => getProjectSettings(project), [project]);
+  const { lengthUnit } = useMemo(() => getUnitLabels(settings), [settings]);
+  const unitFactor = lengthUnit === 'ft' ? 3.28084 : 1.0;
 
   const [mapType, setMapType] = useState<ReportMapType>('satellite');
   const [showAccuracyCircle, setShowAccuracyCircle] = useState<boolean>(true);
@@ -452,6 +451,14 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
   const [showRoadPolyline, setShowRoadPolyline] = useState<boolean>(true);
   const [showFencePolyline, setShowFencePolyline] = useState<boolean>(true);
   const [showInputPins, setShowInputPins] = useState<boolean>(true);
+
+  useEffect(() => {
+    setPinMode('browse');
+    setActiveInfo(null);
+    setIsMeasuring(false);
+    setMeasurePoints([]);
+    setFitTrigger(0);
+  }, [project.id]);
 
   const mapData = useMemo(() => getProjectMapData(project, scope), [project, scope]);
   const roadSection = project.roadSections[0];
@@ -943,6 +950,7 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
         {/* Interactive Map Container */}
         <div className="w-full h-[360px] sm:h-[440px] rounded-xl overflow-hidden border border-slate-200 bg-slate-100 relative">
           <GoogleMap
+            key={project.id}
             mapId="DEMO_MAP_ID"
             defaultCenter={initialCamera.center}
             defaultZoom={initialCamera.zoom}
@@ -1135,7 +1143,7 @@ export const SiteReportMap: React.FC<SiteReportMapProps> = ({
             <div className="text-slate-500 font-medium">Road Route Polyline (A &rarr; B)</div>
             <div className="font-mono font-semibold text-slate-900 tabular-nums truncate mt-0.5">
               {mapData.roadStart && mapData.roadEnd
-                ? `Active (${roadSection?.lengthMeters ?? 0}m)`
+                ? `Active (${roadSection?.lengthMeters ?? 0} ${settings.items.roadMeasurement.unit})`
                 : 'Road GPS A/B needed'}
             </div>
           </div>

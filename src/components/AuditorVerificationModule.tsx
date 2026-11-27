@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ConstructionProject } from '../types';
-import { getProjectSettings } from '../utils/geo';
+import { getProjectSettings, isAreaUnit, isLengthUnit } from '../utils/geo';
 import { cleanVariance, computeMeasurements, formatVariance, roundTo } from '../utils/calculations';
 import { 
   ShieldCheck, 
@@ -24,10 +24,10 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
   onUpdateProject,
   embedded = false,
 }) => {
-  const settings = getProjectSettings(project);
+  const settings = useMemo(() => getProjectSettings(project), [project]);
   const { items, customItems } = settings;
-  const enabledCustom = customItems.filter(c => c.enabled);
-  const m = computeMeasurements(project);
+  const enabledCustom = useMemo(() => customItems.filter(c => c.enabled), [customItems]);
+  const m = useMemo(() => computeMeasurements(project), [project]);
 
   const anyPostsEnabled =
     items.anglePosts.enabled ||
@@ -36,13 +36,15 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
     items.gatePosts.enabled;
 
   const postUnit = m.postUnit;
+  const meshUnitIsArea = isAreaUnit(items.chainLinkMesh.unit);
+  const rrmUnitIsLength = isLengthUnit(items.rrmWall.unit);
 
   const plannedPosts = m.totalPosts;
-  const plannedMesh = m.meshLen;
-  const plannedRrm = m.rrmVol;
+  const plannedMesh = roundTo(meshUnitIsArea ? m.meshArea : m.meshLen, 2);
+  const plannedRrm = rrmUnitIsLength ? m.rrmLen : m.rrmVol;
   const plannedRrmRounded = roundTo(plannedRrm, 2);
-  const plannedRoad = m.roadLen;
-  const plannedSideDrain = m.sideDrainLen;
+  const plannedRoad = roundTo(m.roadLen, 2);
+  const plannedSideDrain = roundTo(m.sideDrainLen, 2);
 
   const audit = project.auditInfo || {
     auditorName: '',
@@ -56,6 +58,8 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
     verifiedSideDrainLength: plannedSideDrain,
     verifiedCustomItems: {},
   };
+
+  const dirtyFieldsRef = useRef<Set<string>>(new Set());
 
   const [auditorName, setAuditorName] = useState<string>(audit.auditorName);
   const [auditDate, setAuditDate] = useState<string>(audit.auditDate);
@@ -82,6 +86,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
   };
 
   useEffect(() => {
+    dirtyFieldsRef.current.clear();
     const currentAudit = project.auditInfo;
     if (currentAudit) {
       setAuditorName(currentAudit.auditorName || '');
@@ -114,7 +119,51 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
       });
       setVerifiedCustom(nextCustom);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
+
+  // Keep unsaved verified fields synced with live field measurements until edited or signed off
+  useEffect(() => {
+    const currentAudit = project.auditInfo;
+    if (currentAudit?.verifiedPostCount === undefined && !dirtyFieldsRef.current.has('posts')) {
+      setVerifiedPosts(plannedPosts);
+    }
+    if (currentAudit?.verifiedMeshLength === undefined && !dirtyFieldsRef.current.has('mesh')) {
+      setVerifiedMesh(plannedMesh);
+    }
+    if (currentAudit?.verifiedRrmVolume === undefined && !dirtyFieldsRef.current.has('rrm')) {
+      setVerifiedRrm(plannedRrmRounded);
+    }
+    if (currentAudit?.verifiedRoadLength === undefined && !dirtyFieldsRef.current.has('road')) {
+      setVerifiedRoad(plannedRoad);
+    }
+    if (currentAudit?.verifiedSideDrainLength === undefined && !dirtyFieldsRef.current.has('drain')) {
+      setVerifiedSideDrain(plannedSideDrain);
+    }
+    setVerifiedCustom(prev => {
+      let changed = false;
+      const next = { ...prev };
+      enabledCustom.forEach(c => {
+        if (
+          currentAudit?.verifiedCustomItems?.[c.id] === undefined &&
+          !dirtyFieldsRef.current.has(`custom:${c.id}`) &&
+          next[c.id] !== c.quantity
+        ) {
+          next[c.id] = c.quantity;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [
+    project.auditInfo,
+    plannedPosts,
+    plannedMesh,
+    plannedRrmRounded,
+    plannedRoad,
+    plannedSideDrain,
+    enabledCustom,
+  ]);
 
   // Variances (rounded cleanly to prevent floating-point drift)
   const postVariance = cleanVariance(verifiedPosts, plannedPosts, 0);
@@ -124,6 +173,12 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
   const sideDrainVariance = cleanVariance(verifiedSideDrain, plannedSideDrain, 2);
 
   const handleSyncFromLogged = () => {
+    dirtyFieldsRef.current.delete('posts');
+    dirtyFieldsRef.current.delete('mesh');
+    dirtyFieldsRef.current.delete('rrm');
+    dirtyFieldsRef.current.delete('road');
+    dirtyFieldsRef.current.delete('drain');
+    enabledCustom.forEach(c => dirtyFieldsRef.current.delete(`custom:${c.id}`));
     setVerifiedPosts(plannedPosts);
     setVerifiedMesh(plannedMesh);
     setVerifiedRrm(plannedRrmRounded);
@@ -138,6 +193,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
 
   const handleSaveAudit = (e: React.FormEvent) => {
     e.preventDefault();
+    dirtyFieldsRef.current.clear();
     const updated: ConstructionProject = {
       ...project,
       auditInfo: {
@@ -278,7 +334,10 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                     type="number"
                     inputMode="numeric"
                     value={verifiedPosts}
-                    onChange={(e) => setVerifiedPosts(parseInt(e.target.value) || 0)}
+                    onChange={(e) => {
+                      dirtyFieldsRef.current.add('posts');
+                      setVerifiedPosts(parseInt(e.target.value, 10) || 0);
+                    }}
                     className={`${inputClass} font-bold text-indigo-700`}
                   />
                 </div>
@@ -287,14 +346,17 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
               {items.chainLinkMesh.enabled && (
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Verified Mesh Length ({items.chainLinkMesh.unit})
+                    Verified Mesh {meshUnitIsArea ? 'Area' : 'Length'} ({items.chainLinkMesh.unit})
                   </label>
                   <input
                     type="number"
                     inputMode="decimal"
                     step="0.5"
                     value={verifiedMesh}
-                    onChange={(e) => setVerifiedMesh(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      dirtyFieldsRef.current.add('mesh');
+                      setVerifiedMesh(parseFloat(e.target.value) || 0);
+                    }}
                     className={`${inputClass} font-bold text-indigo-700`}
                   />
                 </div>
@@ -303,14 +365,17 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
               {items.rrmWall.enabled && (
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Verified RRM Wall Volume ({items.rrmWall.unit})
+                    Verified RMM Wall {rrmUnitIsLength ? 'Length' : 'Volume'} ({items.rrmWall.unit})
                   </label>
                   <input
                     type="number"
                     inputMode="decimal"
                     step="0.01"
                     value={verifiedRrm}
-                    onChange={(e) => setVerifiedRrm(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      dirtyFieldsRef.current.add('rrm');
+                      setVerifiedRrm(parseFloat(e.target.value) || 0);
+                    }}
                     className={`${inputClass} font-bold text-indigo-700`}
                   />
                 </div>
@@ -326,7 +391,10 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                     inputMode="decimal"
                     step="1"
                     value={verifiedRoad}
-                    onChange={(e) => setVerifiedRoad(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      dirtyFieldsRef.current.add('road');
+                      setVerifiedRoad(parseFloat(e.target.value) || 0);
+                    }}
                     className={`${inputClass} font-bold text-indigo-700`}
                   />
                 </div>
@@ -342,7 +410,10 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                     inputMode="decimal"
                     step="1"
                     value={verifiedSideDrain}
-                    onChange={(e) => setVerifiedSideDrain(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      dirtyFieldsRef.current.add('drain');
+                      setVerifiedSideDrain(parseFloat(e.target.value) || 0);
+                    }}
                     className={`${inputClass} font-bold text-indigo-700`}
                   />
                 </div>
@@ -358,12 +429,13 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                     inputMode="decimal"
                     step="any"
                     value={verifiedCustom[c.id] ?? c.quantity}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      dirtyFieldsRef.current.add(`custom:${c.id}`);
                       setVerifiedCustom(prev => ({
                         ...prev,
                         [c.id]: parseFloat(e.target.value) || 0,
-                      }))
-                    }
+                      }));
+                    }}
                     className={`${inputClass} font-bold text-indigo-700`}
                   />
                 </div>
@@ -466,7 +538,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                     }] : []),
                     ...(items.chainLinkMesh.enabled ? [{
                       key: 'mesh',
-                      label: 'Chain-Link Mesh Length',
+                      label: meshUnitIsArea ? 'Chain-Link Mesh Area' : 'Chain-Link Mesh Length',
                       logged: `${plannedMesh} ${items.chainLinkMesh.unit}`,
                       verified: `${verifiedMesh} ${items.chainLinkMesh.unit}`,
                       diff: meshVariance,
@@ -474,11 +546,11 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                     }] : []),
                     ...(items.rrmWall.enabled ? [{
                       key: 'rrm',
-                      label: 'RRM Wall Masonry Volume',
+                      label: rrmUnitIsLength ? 'RMM Wall Length' : 'RMM Wall Masonry Volume',
                       logged: `${plannedRrm.toFixed(2)} ${items.rrmWall.unit}`,
                       verified: `${verifiedRrm.toFixed(2)} ${items.rrmWall.unit}`,
                       diff: rrmVariance,
-                      diffLabel: `${rrmVariance > 0 ? `+${rrmVariance.toFixed(2)}` : rrmVariance.toFixed(2)} ${items.rrmWall.unit}`,
+                      diffLabel: `${formatVariance(rrmVariance, 2)} ${items.rrmWall.unit}`,
                     }] : []),
                     ...(items.roadMeasurement.enabled ? [{
                       key: 'road',
@@ -555,7 +627,9 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       )}
                       {items.chainLinkMesh.enabled && (
                         <tr className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 pr-4 font-semibold text-slate-900">Chain-Link Mesh Length</td>
+                          <td className="py-3 pr-4 font-semibold text-slate-900">
+                            {meshUnitIsArea ? 'Chain-Link Mesh Area' : 'Chain-Link Mesh Length'}
+                          </td>
                           <td className="py-3 px-3 text-right text-slate-600">{plannedMesh} {items.chainLinkMesh.unit}</td>
                           <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedMesh} {items.chainLinkMesh.unit}</td>
                           <td className={`py-3 pl-3 text-right font-bold ${meshVariance < 0 ? 'text-red-600' : meshVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
@@ -565,11 +639,13 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       )}
                       {items.rrmWall.enabled && (
                         <tr className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 pr-4 font-semibold text-slate-900">RRM Wall Masonry Volume</td>
+                          <td className="py-3 pr-4 font-semibold text-slate-900">
+                            {rrmUnitIsLength ? 'RMM Wall Length' : 'RMM Wall Masonry Volume'}
+                          </td>
                           <td className="py-3 px-3 text-right text-slate-600">{plannedRrm.toFixed(2)} {items.rrmWall.unit}</td>
                           <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedRrm.toFixed(2)} {items.rrmWall.unit}</td>
                           <td className={`py-3 pl-3 text-right font-bold ${rrmVariance < 0 ? 'text-red-600' : rrmVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
-                            {rrmVariance > 0 ? `+${rrmVariance.toFixed(2)}` : rrmVariance.toFixed(2)} {items.rrmWall.unit}
+                            {formatVariance(rrmVariance, 2)} {items.rrmWall.unit}
                           </td>
                         </tr>
                       )}

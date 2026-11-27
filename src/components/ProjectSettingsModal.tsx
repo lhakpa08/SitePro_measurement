@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { ConstructionProject, CustomAuditItem, ProjectSettings } from '../types';
-import { getProjectSettings } from '../utils/geo';
+import {
+  convertStandardDimUnit,
+  getProjectSettings,
+  getUnitForBasis,
+  getUnitLabels,
+  isAreaUnit,
+  isLengthUnit,
+} from '../utils/geo';
 import { Settings, X, Save, Ruler, ListChecks, Building2, Plus, Trash2 } from 'lucide-react';
 
 interface ProjectSettingsModalProps {
@@ -27,10 +34,14 @@ const UNIT_PRESETS: Record<StandardItemKey, string[]> = {
 const CUSTOM_UNIT_OPTIONS = ['pcs', 'nos', 'm', 'ft', 'yd', 'km', 'm²', 'ft²', 'm³', 'ft³', 'rolls', 'bags', 'kg', 'tons', 'sets'];
 
 function parseQuickSteps(raw: string, fallback: number[]): number[] {
-  const nums = raw
-    .split(',')
-    .map(s => parseFloat(s.trim()))
-    .filter(n => !isNaN(n) && n > 0);
+  const nums = Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map(s => parseFloat(s.trim()))
+        .filter(n => !isNaN(n) && n > 0)
+    )
+  );
   return nums.length > 0 ? nums : fallback;
 }
 
@@ -210,12 +221,140 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
       },
     };
 
+    const { lengthUnit, areaUnit, volumeUnit } = getUnitLabels(finalizedSettings);
+    const syncedEntityMeasurements = (project.entityMeasurements ?? []).map((em) => {
+      const basis = em.calcBasis || 'auto';
+      const target = em.linkedTarget || 'none';
+
+      if (target === 'angle_post') {
+        return {
+          ...em,
+          unit:
+            basis === 'length' || basis === 'area' || basis === 'volume'
+              ? getUnitForBasis(basis, lengthUnit, areaUnit, volumeUnit, em.unit)
+              : finalizedSettings.items.anglePosts.unit,
+        };
+      }
+      if (target === 'intermediate_post') {
+        return {
+          ...em,
+          unit:
+            basis === 'length' || basis === 'area' || basis === 'volume'
+              ? getUnitForBasis(basis, lengthUnit, areaUnit, volumeUnit, em.unit)
+              : finalizedSettings.items.intermediatePosts.unit,
+        };
+      }
+      if (target === 'strut_post') {
+        return {
+          ...em,
+          unit:
+            basis === 'length' || basis === 'area' || basis === 'volume'
+              ? getUnitForBasis(basis, lengthUnit, areaUnit, volumeUnit, em.unit)
+              : finalizedSettings.items.strutPosts.unit,
+        };
+      }
+      if (target === 'gate_post') {
+        return {
+          ...em,
+          unit:
+            basis === 'length' || basis === 'area' || basis === 'volume'
+              ? getUnitForBasis(basis, lengthUnit, areaUnit, volumeUnit, em.unit)
+              : finalizedSettings.items.gatePosts.unit,
+        };
+      }
+      if (target === 'total_posts') {
+        return {
+          ...em,
+          unit:
+            basis === 'length' || basis === 'area' || basis === 'volume'
+              ? getUnitForBasis(basis, lengthUnit, areaUnit, volumeUnit, em.unit)
+              : finalizedSettings.items.anglePosts.unit || 'pcs',
+        };
+      }
+      if (target === 'chainLinkMesh') {
+        const cfgUnit = finalizedSettings.items.chainLinkMesh.unit;
+        const nextUnit =
+          basis === 'area'
+            ? areaUnit
+            : basis === 'volume'
+            ? volumeUnit
+            : basis === 'nos'
+            ? 'pcs'
+            : basis === 'length'
+            ? isAreaUnit(cfgUnit)
+              ? lengthUnit
+              : cfgUnit
+            : cfgUnit;
+        return { ...em, unit: nextUnit };
+      }
+      if (target === 'rrmWall') {
+        const cfgUnit = finalizedSettings.items.rrmWall.unit;
+        const nextUnit =
+          basis === 'length'
+            ? isLengthUnit(cfgUnit)
+              ? cfgUnit
+              : lengthUnit
+            : basis === 'area'
+            ? areaUnit
+            : basis === 'nos'
+            ? 'pcs'
+            : basis === 'volume'
+            ? isLengthUnit(cfgUnit)
+              ? volumeUnit
+              : cfgUnit
+            : cfgUnit;
+        return { ...em, unit: nextUnit };
+      }
+      if (target === 'roadMeasurement') {
+        const cfgUnit = finalizedSettings.items.roadMeasurement.unit;
+        const nextUnit =
+          basis === 'area'
+            ? areaUnit
+            : basis === 'volume'
+            ? volumeUnit
+            : basis === 'nos'
+            ? 'pcs'
+            : cfgUnit;
+        return { ...em, unit: nextUnit };
+      }
+      if (target === 'sideDrain') {
+        const cfgUnit = finalizedSettings.items.sideDrain.unit;
+        const nextUnit =
+          basis === 'area'
+            ? areaUnit
+            : basis === 'volume'
+            ? volumeUnit
+            : basis === 'nos'
+            ? 'pcs'
+            : cfgUnit;
+        return { ...em, unit: nextUnit };
+      }
+      if (target === 'custom') {
+        const customItem = finalizedSettings.customItems.find((c) => c.id === em.linkedCustomId);
+        if (customItem && (basis === 'nos' || basis === 'auto')) {
+          return { ...em, unit: customItem.unit };
+        }
+      }
+      // Standalone or custom basis
+      if (basis === 'length' || basis === 'area' || basis === 'volume') {
+        return {
+          ...em,
+          unit: getUnitForBasis(basis, lengthUnit, areaUnit, volumeUnit, em.unit),
+        };
+      }
+      return {
+        ...em,
+        unit: convertStandardDimUnit(em.unit, lengthUnit, areaUnit, volumeUnit),
+      };
+    });
+
     const updated: ConstructionProject = {
       ...project,
       name: projectName.trim() || project.name,
       clientName: clientName.trim(),
       location: location.trim(),
       settings: finalizedSettings,
+      ...(project.entityMeasurements ? { entityMeasurements: syncedEntityMeasurements } : {}),
       updatedAt: Date.now(),
     };
     onUpdateProject(updated);
@@ -233,7 +372,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     'sideDrain',
   ];
 
-  const lengthUnitLabel = settings.unitSystem === 'imperial' ? 'ft' : 'm';
+  const lengthUnitLabel = getUnitLabels(settings).lengthUnit;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-sm">

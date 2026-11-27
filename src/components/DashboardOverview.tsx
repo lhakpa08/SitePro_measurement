@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ConstructionProject } from '../types';
-import { getProjectSettings } from '../utils/geo';
+import { getProjectSettings, getUnitLabels, isAreaUnit, isLengthUnit } from '../utils/geo';
 import { computeMeasurements, computeEntityAuditComparisons } from '../utils/calculations';
+import { AppTab } from '../utils/deviceStorage';
 import { exportProjectToExcel, exportProjectToPdf, exportChainLinkPdf, exportRoadPdf } from '../utils/export';
 import { StaticMapScope } from '../utils/staticMap';
 import { AuditorVerificationModule } from './AuditorVerificationModule';
@@ -28,7 +29,7 @@ import {
 
 interface DashboardOverviewProps {
   project: ConstructionProject;
-  setActiveTab: (tab: 'audit' | 'overview') => void;
+  setActiveTab: (tab: AppTab) => void;
   onUpdateProject: (updated: ConstructionProject) => void;
   onPatchProject?: (
     projectId: string,
@@ -48,11 +49,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   onOpenReport,
   currentGps,
 }) => {
-  const settings = getProjectSettings(project);
+  const settings = useMemo(() => getProjectSettings(project), [project]);
   const { items, customItems } = settings;
-  const enabledCustom = customItems.filter(c => c.enabled);
-  const areaUnit = settings.unitSystem === 'imperial' ? 'ft²' : 'm²';
-  const lengthUnit = settings.unitSystem === 'imperial' ? 'ft' : 'm';
+  const enabledCustom = useMemo(() => customItems.filter(c => c.enabled), [customItems]);
+  const { lengthUnit, areaUnit } = useMemo(() => getUnitLabels(settings), [settings]);
+  const meshUnitIsArea = isAreaUnit(items.chainLinkMesh.unit);
+  const rrmUnitIsLength = isLengthUnit(items.rrmWall.unit);
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [fullscreenSectionId, setFullscreenSectionId] = useState<string | null>(null);
@@ -77,9 +79,13 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     };
   }, [fullscreenSectionId]);
 
-  const isSectionCollapsed = (key: string) => collapsedSections[key] !== false;
+  const defaultCollapsedSections = new Set(['reportMap', 'entityComparison', 'auditorRecord']);
+  const isSectionCollapsed = (key: string) =>
+    defaultCollapsedSections.has(key)
+      ? collapsedSections[key] !== false
+      : collapsedSections[key] === true;
   const toggleSection = (key: string) => {
-    setCollapsedSections(prev => ({ ...prev, [key]: prev[key] === false }));
+    setCollapsedSections(prev => ({ ...prev, [key]: !isSectionCollapsed(key) }));
   };
 
   const toggleFullScreen = (key: string) => {
@@ -95,7 +101,16 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       ? 'fixed inset-0 z-[45] bg-white p-5 sm:p-8 overflow-y-auto transition-all'
       : `${baseClass} transition-all`;
 
-  const m = computeMeasurements(project);
+  const m = useMemo(() => computeMeasurements(project), [project]);
+  const entitySummary = useMemo(() => {
+    const entityComparisons = computeEntityAuditComparisons(project, 'all');
+    return {
+      total: entityComparisons.length,
+      excess: entityComparisons.filter(r => r.status === 'excess' || (r.status as string) === 'shortfall').length,
+      underpayment: entityComparisons.filter(r => r.status === 'underpayment').length,
+      matched: entityComparisons.filter(r => r.status === 'matched').length,
+    };
+  }, [project]);
   const totalAnglePosts = m.totalAngle;
   const totalIntermediatePosts = m.totalIntermed;
   const totalStrutPosts = m.totalStrut;
@@ -128,23 +143,23 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     <div className="space-y-4 sm:space-y-6 pb-4">
       
       {/* Overview Header Card */}
-      <div className={getSectionClass('overviewHeader', 'bg-white rounded-2xl p-4 sm:p-8 border border-slate-200/90')}>
-        <div className="flex flex-col gap-5 sm:gap-6">
+      <div className={getSectionClass('overviewHeader', 'bg-white rounded-xl p-5 sm:p-6 border border-slate-200')}>
+        <div className="flex flex-col gap-5">
           <div className="flex items-start justify-between gap-3">
             <button
               type="button"
               onClick={() => toggleSection('overviewHeader')}
               aria-expanded={!isSectionCollapsed('overviewHeader')}
-              className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xl"
+              className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 rounded-lg"
             >
-              <div className="text-xs font-semibold text-indigo-600 mb-1">
+              <div className="text-xs font-medium text-slate-500 mb-1">
                 Site Overview &middot; Audit Summary
               </div>
-              <h2 className="text-xl sm:text-3xl font-extrabold tracking-tight text-slate-900 group-hover:text-slate-700 transition">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 group-hover:text-slate-700 transition">
                 {project.name}
               </h2>
               {!isSectionCollapsed('overviewHeader') && (
-                <p className="text-slate-600 text-xs sm:text-sm leading-relaxed mt-1.5 sm:mt-2 max-w-2xl">
+                <p className="text-slate-600 text-xs sm:text-sm leading-relaxed mt-1.5 max-w-2xl">
                   Review measured quantities across fencing and road works, sign off physical site verification, or customize predetermined units and necessary items.
                 </p>
               )}
@@ -180,42 +195,42 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
 
           {!isSectionCollapsed('overviewHeader') && (
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 flex-shrink-0">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-3 border-t border-slate-100 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveTab('audit')}
-                className="min-h-[44px] px-4 sm:px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+                className="min-h-[40px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
               >
-                <ShieldCheck className="w-4 h-4" />
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
                 <span>Open Auditor</span>
-                <ArrowRight className="w-4 h-4 hidden sm:inline" />
+                <ArrowRight className="w-3.5 h-3.5 hidden sm:inline" />
               </button>
 
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="min-h-[44px] px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+                className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap shrink-0"
               >
-                <Settings className="w-4 h-4" />
+                <Settings className="w-3.5 h-3.5 text-slate-500" />
                 <span>Units &amp; Items</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => (onOpenReport ? onOpenReport('all') : exportProjectToPdf(project, currentGps))}
-                className="min-h-[44px] px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+                onClick={() => exportProjectToExcel(project)}
+                className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap shrink-0"
               >
-                <Download className="w-4 h-4" />
-                <span>Export PDF</span>
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Excel</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => exportProjectToExcel(project)}
-                className="min-h-[44px] px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+                onClick={() => (onOpenReport ? onOpenReport('all') : exportProjectToPdf(project, currentGps))}
+                className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap shrink-0"
               >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                <span>Excel</span>
+                <Download className="w-3.5 h-3.5 text-slate-600" />
+                <span>Export PDF</span>
               </button>
             </div>
           )}
@@ -229,11 +244,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('audit')}
-          className="text-left bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 hover:border-amber-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+          className="text-left bg-white rounded-xl p-4 sm:p-5 border border-slate-200 hover:border-slate-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
         >
-          <div className="flex items-center justify-between gap-2 mb-2.5 sm:mb-3">
-            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">Total Fence Posts</span>
-            <div className="p-1.5 sm:p-2 rounded-xl bg-amber-50 text-amber-600 group-hover:bg-amber-500 group-hover:text-slate-950 transition shrink-0">
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <span className="text-xs font-medium text-slate-500 truncate">Total Fence Posts</span>
+            <div className="p-1.5 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition shrink-0">
               <Fence className="w-4 h-4" />
             </div>
           </div>
@@ -249,19 +264,23 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('audit')}
-          className="text-left bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 hover:border-amber-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+          className="text-left bg-white rounded-xl p-4 sm:p-5 border border-slate-200 hover:border-slate-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
         >
-          <div className="flex items-center justify-between gap-2 mb-2.5 sm:mb-3">
-            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">Fence Mesh &amp; RRM</span>
-            <div className="p-1.5 sm:p-2 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition shrink-0">
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <span className="text-xs font-medium text-slate-500 truncate">Fence Mesh &amp; RRM</span>
+            <div className="p-1.5 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition shrink-0">
               <Layers className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums mb-1">
-            {totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-xs sm:text-sm font-medium text-slate-500">{items.chainLinkMesh.unit}</span>
+            {(meshUnitIsArea ? m.meshArea : totalMeshLength).toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+            <span className="text-xs sm:text-sm font-medium text-slate-500">{items.chainLinkMesh.unit}</span>
           </div>
           <div className="text-[11px] sm:text-xs text-slate-500 truncate tabular-nums">
-            RRM &middot; <span className="font-semibold text-slate-700">{totalRrmVolume.toFixed(2)} {items.rrmWall.unit}</span>
+            RRM &middot;{' '}
+            <span className="font-semibold text-slate-700">
+              {(rrmUnitIsLength ? m.rrmLen : totalRrmVolume).toFixed(2)} {items.rrmWall.unit}
+            </span>
           </div>
         </button>
 
@@ -269,11 +288,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('audit')}
-          className="text-left bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 hover:border-amber-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+          className="text-left bg-white rounded-xl p-4 sm:p-5 border border-slate-200 hover:border-slate-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
         >
-          <div className="flex items-center justify-between gap-2 mb-2.5 sm:mb-3">
-            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">Road Alignment</span>
-            <div className="p-1.5 sm:p-2 rounded-xl bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition shrink-0">
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <span className="text-xs font-medium text-slate-500 truncate">Road Alignment</span>
+            <div className="p-1.5 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition shrink-0">
               <Route className="w-4 h-4" />
             </div>
           </div>
@@ -286,10 +305,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </button>
 
         {/* Metric 4: Audit Status */}
-        <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90">
-          <div className="flex items-center justify-between gap-2 mb-2.5 sm:mb-3">
-            <span className="text-[11px] sm:text-xs font-semibold text-slate-500 truncate">Audit Status</span>
-            <div className={`p-1.5 sm:p-2 rounded-xl shrink-0 ${
+        <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <span className="text-xs font-medium text-slate-500 truncate">Audit Status</span>
+            <div className={`p-1.5 rounded-lg shrink-0 ${
               auditStatus === 'fully_compliant'
                 ? 'bg-emerald-50 text-emerald-600'
                 : auditStatus === 'verified_with_variance'
@@ -305,7 +324,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               )}
             </div>
           </div>
-          <div className="text-base sm:text-xl font-extrabold text-slate-900 mb-1 truncate">
+          <div className="text-base sm:text-xl font-bold text-slate-900 mb-1 truncate">
             {auditStatus === 'fully_compliant'
               ? 'Fully Compliant'
               : auditStatus === 'verified_with_variance'
@@ -320,10 +339,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       </div>
 
       {/* Quick Summary Breakdown Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start">
         
         {/* Chain-Link Fence Material Breakdown */}
-        <div className={getSectionClass('fencingBreakdown', 'bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90')}>
+        <div className={getSectionClass('fencingBreakdown', 'bg-white rounded-xl p-5 border border-slate-200')}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2">
             <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
               <button
@@ -341,7 +360,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   </h3>
                   {isSectionCollapsed('fencingBreakdown') && (
                     <p className="text-xs text-slate-500 tabular-nums truncate">
-                      {totalPostsCount} {postUnit} &middot; {totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.chainLinkMesh.unit} mesh &middot; {totalRrmVolume.toFixed(2)} {items.rrmWall.unit} RRM
+                      {totalPostsCount} {postUnit} &middot; {(meshUnitIsArea ? m.meshArea : totalMeshLength).toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.chainLinkMesh.unit} mesh &middot; {(rrmUnitIsLength ? m.rrmLen : totalRrmVolume).toFixed(2)} {items.rrmWall.unit} RRM
                     </p>
                   )}
                 </div>
@@ -447,14 +466,22 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               )}
               {items.chainLinkMesh.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">Chain-Link Mesh Length</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{totalMeshLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.chainLinkMesh.unit}</span>
+                  <span className="text-slate-600">
+                    {meshUnitIsArea ? 'Chain-Link Mesh Area' : 'Chain-Link Mesh Length'}
+                  </span>
+                  <span className="font-bold text-slate-900 tabular-nums">
+                    {(meshUnitIsArea ? m.meshArea : totalMeshLength).toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.chainLinkMesh.unit}
+                  </span>
                 </div>
               )}
               {items.rrmWall.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">RRM Plinth Wall Masonry Volume</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{totalRrmVolume.toFixed(2)} {items.rrmWall.unit}</span>
+                  <span className="text-slate-600">
+                    {rrmUnitIsLength ? 'RRM Plinth Wall Length' : 'RRM Plinth Wall Masonry Volume'}
+                  </span>
+                  <span className="font-bold text-slate-900 tabular-nums">
+                    {(rrmUnitIsLength ? m.rrmLen : totalRrmVolume).toFixed(2)} {items.rrmWall.unit}
+                  </span>
                 </div>
               )}
               {fencingCustom.map((c) => (
@@ -468,7 +495,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         {/* Road Construction & General Items Breakdown */}
-        <div className={getSectionClass('roadBreakdown', 'bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90')}>
+        <div className={getSectionClass('roadBreakdown', 'bg-white rounded-xl p-5 border border-slate-200')}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2">
             <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
               <button
@@ -605,7 +632,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       </div>
 
       {/* Site Location & Accurate Report Map */}
-      <div className={getSectionClass('reportMap', 'bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90')}>
+      <div className={getSectionClass('reportMap', 'bg-white rounded-xl p-5 border border-slate-200')}>
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
@@ -662,6 +689,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         {!isSectionCollapsed('reportMap') && (
           <div className="mt-4">
             <SiteReportMap
+              key={`map-${project.id}`}
               project={project}
               currentGps={currentGps}
               onUpdateProject={onUpdateProject}
@@ -671,76 +699,77 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       </div>
 
       {/* Entity Measurements vs. Audit Verification Section */}
-      {(() => {
-        const entityComparisons = computeEntityAuditComparisons(project, 'all');
-        const excessCount = entityComparisons.filter(r => r.status === 'excess' || (r.status as string) === 'shortfall').length;
-        const underpaymentCount = entityComparisons.filter(r => r.status === 'underpayment').length;
-        const matchedCount = entityComparisons.filter(r => r.status === 'matched').length;
-        return (
-          <div className={getSectionClass('entityComparison', 'bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90')}>
-            <div className="flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => toggleSection('entityComparison')}
-                aria-expanded={!isSectionCollapsed('entityComparison')}
-                className="flex items-center gap-3 text-left min-w-0 flex-1 group"
-              >
-                <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl flex-shrink-0">
-                  <Scale className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
-                    Entity Measurements vs. Audit Verification &amp; Variances
-                  </h3>
-                  <p className="text-xs text-slate-500 truncate mt-0.5 tabular-nums">
-                    {entityComparisons.length === 0
-                      ? 'Add entity-claimed Nos, Length, Width & Thickness to compare against audit verification'
-                      : `${entityComparisons.length} item${entityComparisons.length === 1 ? '' : 's'} · ${matchedCount} matched · ${excessCount} excess${underpaymentCount > 0 ? ` · ${underpaymentCount} underpayment` : ''}`}
-                  </p>
-                </div>
-              </button>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => toggleFullScreen('entityComparison')}
-                  aria-label={fullscreenSectionId === 'entityComparison' ? 'Exit full screen for Entity Comparison' : 'Extend Entity Comparison to full screen'}
-                  aria-pressed={fullscreenSectionId === 'entityComparison'}
-                  title={fullscreenSectionId === 'entityComparison' ? 'Restore card size (Esc)' : 'Extend to full screen'}
-                  className={`w-10 h-10 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition ${
-                    fullscreenSectionId === 'entityComparison'
-                      ? 'bg-slate-900 text-white hover:bg-slate-800'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-                  }`}
-                >
-                  {fullscreenSectionId === 'entityComparison' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleSection('entityComparison')}
-                  aria-expanded={!isSectionCollapsed('entityComparison')}
-                  aria-label="Toggle Entity Measurements Comparison"
-                  className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
-                >
-                  <ChevronDown
-                    className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('entityComparison') ? '-rotate-90' : 'rotate-0'}`}
-                  />
-                </button>
-              </div>
+      <div className={getSectionClass('entityComparison', 'bg-white rounded-xl p-5 border border-slate-200')}>
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => toggleSection('entityComparison')}
+            aria-expanded={!isSectionCollapsed('entityComparison')}
+            className="flex items-center gap-3 text-left min-w-0 flex-1 group"
+          >
+            <div className="p-2 bg-slate-100 text-slate-700 rounded-lg flex-shrink-0">
+              <Scale className="w-5 h-5" />
             </div>
+            <div className="min-w-0">
+              <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
+                Entity Measurements vs. Audit Verification &amp; Variances
+              </h3>
+              <p className="text-xs text-slate-500 truncate mt-0.5 tabular-nums">
+                {entitySummary.total === 0
+                  ? 'Add entity-claimed Nos, Length, Width & Thickness to compare against audit verification'
+                  : `${entitySummary.total} item${entitySummary.total === 1 ? '' : 's'} · ${entitySummary.matched} matched · ${entitySummary.excess} excess${entitySummary.underpayment > 0 ? ` · ${entitySummary.underpayment} underpayment` : ''}`}
+              </p>
+            </div>
+          </button>
 
-            {!isSectionCollapsed('entityComparison') && (
-              <div className="mt-4">
-                <EntityComparisonModule
-                  project={project}
-                  onUpdateProject={onUpdateProject}
-                  onPatchProject={onPatchProject}
-                />
-              </div>
-            )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('entity')}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold transition whitespace-nowrap"
+            >
+              <span>Open Tab</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleFullScreen('entityComparison')}
+              aria-label={fullscreenSectionId === 'entityComparison' ? 'Exit full screen for Entity Comparison' : 'Extend Entity Comparison to full screen'}
+              aria-pressed={fullscreenSectionId === 'entityComparison'}
+              title={fullscreenSectionId === 'entityComparison' ? 'Restore card size (Esc)' : 'Extend to full screen'}
+              className={`w-10 h-10 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition ${
+                fullscreenSectionId === 'entityComparison'
+                  ? 'bg-slate-900 text-white hover:bg-slate-800'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+              }`}
+            >
+              {fullscreenSectionId === 'entityComparison' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleSection('entityComparison')}
+              aria-expanded={!isSectionCollapsed('entityComparison')}
+              aria-label="Toggle Entity Measurements Comparison"
+              className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
+            >
+              <ChevronDown
+                className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('entityComparison') ? '-rotate-90' : 'rotate-0'}`}
+              />
+            </button>
           </div>
-        );
-      })()}
+        </div>
+
+        {!isSectionCollapsed('entityComparison') && (
+          <div className="mt-4">
+            <EntityComparisonModule
+              key={`overview-entity-${project.id}`}
+              project={project}
+              onUpdateProject={onUpdateProject}
+              onPatchProject={onPatchProject}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Auditor Verification & Inspection Section on Overview */}
       <div className={getSectionClass('auditorRecord', 'pt-1 space-y-3')}>
@@ -788,7 +817,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
         {!isSectionCollapsed('auditorRecord') && (
           <AuditorVerificationModule
-            key={project.id}
+            key={`overview-auditor-${project.id}`}
             project={project}
             onUpdateProject={onUpdateProject}
             embedded

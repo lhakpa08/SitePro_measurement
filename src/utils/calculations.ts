@@ -1,5 +1,13 @@
-import { ConstructionProject, EntityComparisonTarget, EntityMeasurementItem } from '../types';
-import { formatChainage, getProjectSettings } from './geo';
+import { ConstructionProject, EntityCalcBasis, EntityComparisonTarget, EntityMeasurementItem } from '../types';
+import {
+  formatChainage,
+  getProjectSettings,
+  getUnitForBasis,
+  getUnitLabels,
+  isAreaUnit,
+  isLengthUnit,
+  isVolumeUnit,
+} from './geo';
 import { StaticMapScope } from './staticMap';
 
 export interface ReportMeasurements {
@@ -53,7 +61,7 @@ export function cleanVariance(verified: number, logged: number, decimals = 2): n
 
 export function formatVariance(diff: number, decimals = 2): string {
   const clean = roundTo(diff, decimals);
-  if (clean === 0) return decimals > 0 && !Number.isInteger(clean) ? '0' : '0';
+  if (clean === 0) return '0';
   const formatted = Number.isInteger(clean) ? String(clean) : clean.toFixed(decimals).replace(/\.?0+$/, '');
   return clean > 0 ? `+${formatted}` : formatted;
 }
@@ -77,9 +85,7 @@ export function computeMeasurements(
     if (scope === 'road') return c.category === 'road';
     return true;
   });
-  const lengthUnit = settings.unitSystem === 'imperial' ? 'ft' : 'm';
-  const areaUnit = settings.unitSystem === 'imperial' ? 'ft²' : 'm²';
-  const volumeUnit = settings.unitSystem === 'imperial' ? 'ft³' : 'm³';
+  const { lengthUnit, areaUnit, volumeUnit } = getUnitLabels(settings);
 
   const totalAngle = project.fencePosts.filter((p) => p.postType === 'angle_post').length;
   const totalIntermed = project.fencePosts.filter((p) => p.postType === 'intermediate_post').length;
@@ -121,22 +127,39 @@ export function computeMeasurements(
   const rrmWall0 = project.rrmWalls[0];
   const rrmWidthEntries = rrmWall0?.topWidthEntries?.length ? rrmWall0.topWidthEntries : [];
   const rrmHeightEntries = rrmWall0?.heightEntries?.length ? rrmWall0.heightEntries : [];
-  const rrmTopW = rrmWall0 ? getAverageOf(rrmWall0.topWidthEntries, rrmWall0.topWidthMeters) : 0.38;
-  const rrmBotW = rrmWall0 ? getAverageOf(rrmWall0.bottomWidthEntries, rrmWall0.bottomWidthMeters) : 0.38;
-  const rrmWidth = roundTo((rrmTopW + rrmBotW) / 2, 2);
-  const rrmHeight = roundTo(
-    rrmWall0 ? getAverageOf(rrmWall0.heightEntries, rrmWall0.heightMeters) : settings.defaultRrmHeight,
-    2
+
+  let rrmAreaSum = 0;
+  let rrmVol = 0;
+  let rrmHeightLenSum = 0;
+  for (const c of project.rrmWalls) {
+    const len = Number.isFinite(c.lengthMeters) ? c.lengthMeters : 0;
+    const topW = getAverageOf(c.topWidthEntries, c.topWidthMeters);
+    const botW = getAverageOf(c.bottomWidthEntries, c.bottomWidthMeters);
+    const h = getAverageOf(c.heightEntries, c.heightMeters);
+    const avgW = (topW + botW) / 2;
+    rrmAreaSum += len * avgW;
+    rrmHeightLenSum += len * h;
+    rrmVol += len * h * avgW;
+  }
+  rrmVol = roundTo(rrmVol, 4);
+
+  const rrmWidth = roundTo(
+    rrmLen > 0
+      ? rrmAreaSum / rrmLen
+      : rrmWall0
+      ? (getAverageOf(rrmWall0.topWidthEntries, rrmWall0.topWidthMeters) +
+          getAverageOf(rrmWall0.bottomWidthEntries, rrmWall0.bottomWidthMeters)) /
+        2
+      : 0.38,
+    3
   );
-  const rrmVol = roundTo(
-    project.rrmWalls.reduce((acc, c) => {
-      const len = Number.isFinite(c.lengthMeters) ? c.lengthMeters : 0;
-      const topW = getAverageOf(c.topWidthEntries, c.topWidthMeters);
-      const botW = getAverageOf(c.bottomWidthEntries, c.bottomWidthMeters);
-      const h = getAverageOf(c.heightEntries, c.heightMeters);
-      return acc + len * h * ((topW + botW) / 2);
-    }, 0),
-    4
+  const rrmHeight = roundTo(
+    rrmLen > 0
+      ? rrmHeightLenSum / rrmLen
+      : rrmWall0
+      ? getAverageOf(rrmWall0.heightEntries, rrmWall0.heightMeters)
+      : settings.defaultRrmHeight,
+    3
   );
 
   const roadLen = roundTo(
@@ -148,32 +171,35 @@ export function computeMeasurements(
   const roadSec0 = project.roadSections[0];
   const roadWidthEntries = roadSec0?.widthEntries?.length ? roadSec0.widthEntries : [];
   const roadDepthEntries = roadSec0?.depthEntries?.length ? roadSec0.depthEntries : [];
+
+  let roadAreaSum = 0;
+  let roadVolSum = 0;
+  let roadDepthLenSum = 0;
+  for (const curr of project.roadSections) {
+    const len = Number.isFinite(curr.lengthMeters) ? curr.lengthMeters : 0;
+    const w = getAverageOf(curr.widthEntries, curr.widthMeters ?? settings.defaultRoadWidth);
+    const d = getAverageOf(curr.depthEntries, curr.earthworkCutDepthMeters ?? 0);
+    roadAreaSum += len * w;
+    roadDepthLenSum += len * d;
+    roadVolSum += len * w * d;
+  }
+  const roadArea = roundTo(roadAreaSum, 4);
+  const roadVol = roundTo(roadVolSum, 4);
   const roadWidth = roundTo(
-    roadSec0
+    roadLen > 0
+      ? roadAreaSum / roadLen
+      : roadSec0
       ? getAverageOf(roadSec0.widthEntries, roadSec0.widthMeters ?? settings.defaultRoadWidth)
       : settings.defaultRoadWidth,
-    2
-  );
-  const roadDepth = roundTo(
-    roadSec0 ? getAverageOf(roadSec0.depthEntries, roadSec0.earthworkCutDepthMeters ?? 0) : 0,
     3
   );
-  const roadArea = roundTo(
-    project.roadSections.reduce((acc, curr) => {
-      const len = Number.isFinite(curr.lengthMeters) ? curr.lengthMeters : 0;
-      const w = getAverageOf(curr.widthEntries, curr.widthMeters ?? settings.defaultRoadWidth);
-      return acc + len * w;
-    }, 0),
-    4
-  );
-  const roadVol = roundTo(
-    project.roadSections.reduce((acc, curr) => {
-      const len = Number.isFinite(curr.lengthMeters) ? curr.lengthMeters : 0;
-      const w = getAverageOf(curr.widthEntries, curr.widthMeters ?? settings.defaultRoadWidth);
-      const d = getAverageOf(curr.depthEntries, curr.earthworkCutDepthMeters ?? 0);
-      return acc + len * w * d;
-    }, 0),
-    4
+  const roadDepth = roundTo(
+    roadLen > 0
+      ? roadDepthLenSum / roadLen
+      : roadSec0
+      ? getAverageOf(roadSec0.depthEntries, roadSec0.earthworkCutDepthMeters ?? 0)
+      : 0,
+    3
   );
   const sideDrainLen = roundTo(
     project.roadSections.reduce(
@@ -241,13 +267,19 @@ export function computeMeasurements(
   };
 }
 
-export function calcEntityQuantity(item: Pick<EntityMeasurementItem, 'nos' | 'length' | 'width' | 'thickness' | 'calcBasis'>): number {
-  const basis = item.calcBasis || 'auto';
-  const hasNos = item.nos !== undefined && Number.isFinite(item.nos);
-  const nosVal = hasNos ? Math.max(0, item.nos!) : undefined;
-  const lenVal = item.length !== undefined && Number.isFinite(item.length) && item.length > 0 ? item.length : undefined;
-  const widthVal = item.width !== undefined && Number.isFinite(item.width) && item.width > 0 ? item.width : undefined;
-  const thickVal = item.thickness !== undefined && Number.isFinite(item.thickness) && item.thickness > 0 ? item.thickness : undefined;
+export function calcQuantityFromDims(dims: {
+  nos?: number;
+  length?: number;
+  width?: number;
+  thickness?: number;
+  calcBasis?: EntityCalcBasis;
+}): number {
+  const basis = dims.calcBasis || 'auto';
+  const nosVal = dims.nos !== undefined && Number.isFinite(dims.nos) ? Math.max(0, dims.nos) : undefined;
+  const lenVal = dims.length !== undefined && Number.isFinite(dims.length) && dims.length >= 0 ? dims.length : undefined;
+  const widthVal = dims.width !== undefined && Number.isFinite(dims.width) && dims.width >= 0 ? dims.width : undefined;
+  const thickVal =
+    dims.thickness !== undefined && Number.isFinite(dims.thickness) && dims.thickness >= 0 ? dims.thickness : undefined;
 
   if (nosVal === 0) return 0;
 
@@ -267,56 +299,48 @@ export function calcEntityQuantity(item: Pick<EntityMeasurementItem, 'nos' | 'le
     return roundTo((nosVal ?? 1) * lenVal * widthVal * thickVal, 3);
   }
 
-  // 'auto': multiply Nos (default 1 when dimensions exist) across whichever positive dimensions are entered
-  const dims = [lenVal, widthVal, thickVal].filter((v): v is number => v !== undefined);
-  if (dims.length === 0) {
+  // 'auto': multiply Nos (default 1 when dimensions exist) across whichever dimensions are entered
+  const enteredDims = [lenVal, widthVal, thickVal].filter((v): v is number => v !== undefined);
+  if (enteredDims.length === 0) {
     return roundTo(nosVal ?? 0, 3);
   }
-  const product = dims.reduce((acc, d) => acc * d, nosVal ?? 1);
+  const product = enteredDims.reduce((acc, d) => acc * d, nosVal ?? 1);
   return roundTo(product, 3);
 }
 
+export function calcEntityQuantity(
+  item: Pick<EntityMeasurementItem, 'nos' | 'length' | 'width' | 'thickness' | 'calcBasis'>
+): number {
+  return calcQuantityFromDims(item);
+}
+
 export function calcAuditQuantity(
-  item: Pick<EntityMeasurementItem, 'auditNos' | 'auditLength' | 'auditWidth' | 'auditThickness' | 'calcBasis' | 'verifiedOverride'>
+  item: Pick<
+    EntityMeasurementItem,
+    'auditNos' | 'auditLength' | 'auditWidth' | 'auditThickness' | 'calcBasis' | 'verifiedOverride'
+  >,
+  fallbackDims?: EntityAuditDimensionSnapshot
 ): number | null {
   if (item.verifiedOverride !== undefined && Number.isFinite(item.verifiedOverride)) {
     return roundTo(item.verifiedOverride, 3);
   }
-  const basis = item.calcBasis || 'auto';
-  const hasNos = item.auditNos !== undefined && Number.isFinite(item.auditNos);
-  const nosVal = hasNos ? Math.max(0, item.auditNos!) : undefined;
-  const lenVal = item.auditLength !== undefined && Number.isFinite(item.auditLength) && item.auditLength > 0 ? item.auditLength : undefined;
-  const widthVal = item.auditWidth !== undefined && Number.isFinite(item.auditWidth) && item.auditWidth > 0 ? item.auditWidth : undefined;
-  const thickVal = item.auditThickness !== undefined && Number.isFinite(item.auditThickness) && item.auditThickness > 0 ? item.auditThickness : undefined;
+  const hasManualInput =
+    item.auditNos !== undefined ||
+    item.auditLength !== undefined ||
+    item.auditWidth !== undefined ||
+    item.auditThickness !== undefined;
 
-  if (nosVal === undefined && lenVal === undefined && widthVal === undefined && thickVal === undefined) {
+  if (!hasManualInput) {
     return null;
   }
-  if (nosVal === 0) return 0;
 
-  if (basis === 'nos') {
-    return roundTo(nosVal ?? 0, 3);
-  }
-  if (basis === 'length') {
-    if (lenVal === undefined) return 0;
-    return roundTo((nosVal ?? 1) * lenVal, 3);
-  }
-  if (basis === 'area') {
-    if (lenVal === undefined || widthVal === undefined) return 0;
-    return roundTo((nosVal ?? 1) * lenVal * widthVal, 3);
-  }
-  if (basis === 'volume') {
-    if (lenVal === undefined || widthVal === undefined || thickVal === undefined) return 0;
-    return roundTo((nosVal ?? 1) * lenVal * widthVal * thickVal, 3);
-  }
-
-  // 'auto': multiply Nos across whichever positive dimensions are entered
-  const dims = [lenVal, widthVal, thickVal].filter((v): v is number => v !== undefined);
-  if (dims.length === 0) {
-    return roundTo(nosVal ?? 0, 3);
-  }
-  const product = dims.reduce((acc, d) => acc * d, nosVal ?? 1);
-  return roundTo(product, 3);
+  return calcQuantityFromDims({
+    nos: item.auditNos !== undefined ? item.auditNos : fallbackDims?.nos,
+    length: item.auditLength !== undefined ? item.auditLength : fallbackDims?.length,
+    width: item.auditWidth !== undefined ? item.auditWidth : fallbackDims?.width,
+    thickness: item.auditThickness !== undefined ? item.auditThickness : fallbackDims?.thickness,
+    calcBasis: item.calcBasis,
+  });
 }
 
 export interface EntityAuditDimensionSnapshot {
@@ -351,10 +375,62 @@ export interface EntityAuditComparisonRow {
   scopeCategory: 'fencing' | 'road' | 'general';
 }
 
+interface SnapshotContext {
+  settings: ReturnType<typeof getProjectSettings>;
+  customItemsById: Map<string, ReturnType<typeof getProjectSettings>['customItems'][number]>;
+  avgPostHeights: Record<'all' | 'angle_post' | 'intermediate_post' | 'strut_post' | 'gate_post', number>;
+}
+
+function buildSnapshotContext(project: ConstructionProject): SnapshotContext {
+  const settings = getProjectSettings(project);
+  const customItemsById = new Map(settings.customItems.map((c) => [c.id, c]));
+
+  const sums = {
+    all: 0,
+    angle_post: 0,
+    intermediate_post: 0,
+    strut_post: 0,
+    gate_post: 0,
+  };
+  const counts = {
+    all: 0,
+    angle_post: 0,
+    intermediate_post: 0,
+    strut_post: 0,
+    gate_post: 0,
+  };
+
+  for (const p of project.fencePosts) {
+    const h = Number.isFinite(p.heightMeters) && p.heightMeters > 0 ? p.heightMeters : settings.defaultPostHeight;
+    sums.all += h;
+    counts.all += 1;
+    if (p.postType in sums) {
+      sums[p.postType] += h;
+      counts[p.postType] += 1;
+    }
+  }
+
+  return {
+    settings,
+    customItemsById,
+    avgPostHeights: {
+      all: counts.all > 0 ? roundTo(sums.all / counts.all, 3) : settings.defaultPostHeight,
+      angle_post: counts.angle_post > 0 ? roundTo(sums.angle_post / counts.angle_post, 3) : settings.defaultPostHeight,
+      intermediate_post:
+        counts.intermediate_post > 0
+          ? roundTo(sums.intermediate_post / counts.intermediate_post, 3)
+          : settings.defaultPostHeight,
+      strut_post: counts.strut_post > 0 ? roundTo(sums.strut_post / counts.strut_post, 3) : settings.defaultPostHeight,
+      gate_post: counts.gate_post > 0 ? roundTo(sums.gate_post / counts.gate_post, 3) : settings.defaultPostHeight,
+    },
+  };
+}
+
 export function getAuditTargetSnapshot(
   project: ConstructionProject,
   item: EntityMeasurementItem,
-  m: ReportMeasurements = computeMeasurements(project)
+  m: ReportMeasurements = computeMeasurements(project),
+  ctx?: SnapshotContext
 ): {
   auditQty: number | null;
   auditUnit: string;
@@ -362,171 +438,282 @@ export function getAuditTargetSnapshot(
   auditDims: EntityAuditDimensionSnapshot;
   scopeCategory: 'fencing' | 'road' | 'general';
 } {
-  const settings = getProjectSettings(project);
-  const { items, customItems } = settings;
+  const context = ctx ?? buildSnapshotContext(project);
+  const { settings, customItemsById, avgPostHeights } = context;
+  const { items } = settings;
   const target: EntityComparisonTarget = item.linkedTarget || 'none';
   const basis = item.calcBasis || 'auto';
-  const auditInfo = project.auditInfo;
+  const useManualDims = Boolean(item.auditManualOverride);
 
   const hasW = item.width !== undefined && item.width > 0;
   const hasT = item.thickness !== undefined && item.thickness > 0;
   const hasL = item.length !== undefined && item.length > 0;
 
-  switch (target) {
-    case 'angle_post':
+  const resolvePostSnapshot = (
+    count: number,
+    unit: string,
+    label: string,
+    postType?: 'angle_post' | 'intermediate_post' | 'strut_post' | 'gate_post'
+  ) => {
+    const fieldHeight = postType ? avgPostHeights[postType] : avgPostHeights.all;
+    if (basis === 'length') {
+      const effLen = (useManualDims ? item.auditLength : undefined) ?? fieldHeight;
       return {
-        auditQty: m.totalAngle,
-        auditUnit: items.anglePosts.unit,
-        auditLabel: 'Angle Post',
-        auditDims: { nos: m.totalAngle },
-        scopeCategory: 'fencing',
-      };
-    case 'intermediate_post':
-      return {
-        auditQty: m.totalIntermed,
-        auditUnit: items.intermediatePosts.unit,
-        auditLabel: 'Intermediate Posts',
-        auditDims: { nos: m.totalIntermed },
-        scopeCategory: 'fencing',
-      };
-    case 'strut_post':
-      return {
-        auditQty: m.totalStrut,
-        auditUnit: items.strutPosts.unit,
-        auditLabel: 'Strut Posts',
-        auditDims: { nos: m.totalStrut },
-        scopeCategory: 'fencing',
-      };
-    case 'gate_post':
-      return {
-        auditQty: m.totalGate,
-        auditUnit: items.gatePosts.unit,
-        auditLabel: 'Gate Posts',
-        auditDims: { nos: m.totalGate },
-        scopeCategory: 'fencing',
-      };
-    case 'total_posts': {
-      const verified = auditInfo?.verifiedPostCount ?? m.totalPosts;
-      return {
-        auditQty: verified,
-        auditUnit: m.postUnit,
-        auditLabel: 'Total Fence Posts',
-        auditDims: { nos: verified },
-        scopeCategory: 'fencing',
+        auditQty: roundTo(count * effLen, 3),
+        auditUnit: m.lengthUnit,
+        auditLabel: `${label} (Length)`,
+        auditDims: { nos: count, length: effLen },
+        scopeCategory: 'fencing' as const,
       };
     }
+    if (basis === 'area' || basis === 'volume') {
+      const effLen = (useManualDims ? item.auditLength : undefined) ?? fieldHeight;
+      const effW = (useManualDims ? item.auditWidth : undefined) ?? item.width;
+      const effT = (useManualDims ? item.auditThickness : undefined) ?? item.thickness;
+      return {
+        auditQty: calcQuantityFromDims({ nos: count, length: effLen, width: effW, thickness: effT, calcBasis: basis }),
+        auditUnit: basis === 'area' ? m.areaUnit : m.volumeUnit,
+        auditLabel: label,
+        auditDims: { nos: count, length: effLen, width: effW, thickness: effT },
+        scopeCategory: 'fencing' as const,
+      };
+    }
+    return {
+      auditQty: count,
+      auditUnit: unit,
+      auditLabel: label,
+      auditDims: { nos: count },
+      scopeCategory: 'fencing' as const,
+    };
+  };
+
+  switch (target) {
+    case 'angle_post':
+      return resolvePostSnapshot(m.totalAngle, items.anglePosts.unit, 'Angle Post', 'angle_post');
+    case 'intermediate_post':
+      return resolvePostSnapshot(m.totalIntermed, items.intermediatePosts.unit, 'Intermediate Posts', 'intermediate_post');
+    case 'strut_post':
+      return resolvePostSnapshot(m.totalStrut, items.strutPosts.unit, 'Strut Posts', 'strut_post');
+    case 'gate_post':
+      return resolvePostSnapshot(m.totalGate, items.gatePosts.unit, 'Gate Posts', 'gate_post');
+    case 'total_posts': {
+      return resolvePostSnapshot(m.totalPosts, m.postUnit, 'Total Fence Posts');
+    }
     case 'chainLinkMesh': {
-      const verifiedLen = roundTo(auditInfo?.verifiedMeshLength ?? m.meshLen, 2);
+      const fieldLen = roundTo(m.meshLen, 3);
+      const fieldHeight = m.meshLen > 0 ? roundTo(m.meshArea / m.meshLen, 3) : m.meshWidth;
+      const nosForDims = fieldLen > 0 ? 1 : 0;
+      const compareNos = basis === 'nos';
+      const compareVol =
+        basis === 'volume' || (basis === 'auto' && ((hasL && hasW && hasT) || isVolumeUnit(item.unit)));
       const compareArea =
-        basis === 'area' || (basis === 'auto' && hasL && hasW && !hasT) || item.unit.trim() === m.areaUnit;
+        basis === 'area' ||
+        (basis === 'auto' && ((hasL && hasW && !hasT) || isAreaUnit(item.unit) || isAreaUnit(items.chainLinkMesh.unit)));
+
+      if (compareNos) {
+        const nosCount = project.fenceMeshSegments.length;
+        return {
+          auditQty: nosCount,
+          auditUnit: 'pcs',
+          auditLabel: 'Chain-Link Mesh (Nos)',
+          auditDims: { nos: nosCount, length: fieldLen, width: fieldHeight },
+          scopeCategory: 'fencing',
+        };
+      }
+      if (compareVol) {
+        const effT = (useManualDims ? item.auditThickness : undefined) ?? item.thickness;
+        return {
+          auditQty: effT !== undefined ? roundTo(m.meshArea * effT, 3) : 0,
+          auditUnit: m.volumeUnit,
+          auditLabel: 'Chain-Link Mesh (Volume)',
+          auditDims: { nos: nosForDims, length: fieldLen, width: fieldHeight, thickness: effT },
+          scopeCategory: 'fencing',
+        };
+      }
       if (compareArea) {
         return {
-          auditQty: roundTo(verifiedLen * m.meshWidth, 2),
+          auditQty: roundTo(m.meshArea, 3),
           auditUnit: m.areaUnit,
           auditLabel: 'Chain-Link Mesh (Area)',
-          auditDims: { length: verifiedLen, width: m.meshWidth },
+          auditDims: { nos: nosForDims, length: fieldLen, width: fieldHeight },
           scopeCategory: 'fencing',
         };
       }
       return {
-        auditQty: verifiedLen,
-        auditUnit: items.chainLinkMesh.unit,
+        auditQty: fieldLen,
+        auditUnit: isAreaUnit(items.chainLinkMesh.unit) ? m.lengthUnit : items.chainLinkMesh.unit || m.lengthUnit,
         auditLabel: 'Chain-Link Mesh (Length)',
-        auditDims: { length: verifiedLen, width: m.meshWidth },
+        auditDims: { nos: nosForDims, length: fieldLen, width: fieldHeight },
         scopeCategory: 'fencing',
       };
     }
     case 'rrmWall': {
+      const rrmLenRounded = roundTo(m.rrmLen, 3);
+      const nosForDims = rrmLenRounded > 0 ? 1 : 0;
+      const compareNos = basis === 'nos';
       const compareLength =
-        basis === 'length' || (basis === 'auto' && hasL && !hasW && !hasT && item.unit.trim() === m.lengthUnit);
+        basis === 'length' ||
+        (basis === 'auto' && ((hasL && !hasW && !hasT) || isLengthUnit(item.unit) || isLengthUnit(items.rrmWall.unit)));
       const compareArea =
-        basis === 'area' || (basis === 'auto' && hasL && hasW && !hasT && item.unit.trim() === m.areaUnit);
+        basis === 'area' || (basis === 'auto' && hasL && hasW && !hasT && isAreaUnit(item.unit));
+
+      if (compareNos) {
+        const nosCount = project.rrmWalls.length;
+        return {
+          auditQty: nosCount,
+          auditUnit: 'pcs',
+          auditLabel: 'RMM Wall (Nos)',
+          auditDims: { nos: nosCount, length: rrmLenRounded, width: m.rrmWidth, thickness: m.rrmHeight },
+          scopeCategory: 'fencing',
+        };
+      }
       if (compareLength) {
         return {
-          auditQty: roundTo(m.rrmLen, 2),
-          auditUnit: m.lengthUnit,
+          auditQty: rrmLenRounded,
+          auditUnit: isLengthUnit(items.rrmWall.unit) ? items.rrmWall.unit : m.lengthUnit,
           auditLabel: 'RMM Wall (Length)',
-          auditDims: { length: roundTo(m.rrmLen, 2), width: m.rrmWidth, thickness: m.rrmHeight },
+          auditDims: { nos: nosForDims, length: rrmLenRounded, width: m.rrmWidth, thickness: m.rrmHeight },
           scopeCategory: 'fencing',
         };
       }
       if (compareArea) {
+        const rrmArea = roundTo(
+          project.rrmWalls.reduce((acc, c) => {
+            const len = Number.isFinite(c.lengthMeters) ? c.lengthMeters : 0;
+            const topW = getAverageOf(c.topWidthEntries, c.topWidthMeters);
+            const botW = getAverageOf(c.bottomWidthEntries, c.bottomWidthMeters);
+            return acc + len * ((topW + botW) / 2);
+          }, 0),
+          3
+        );
         return {
-          auditQty: roundTo(m.rrmLen * m.rrmWidth, 2),
+          auditQty: rrmArea,
           auditUnit: m.areaUnit,
           auditLabel: 'RMM Wall (Area)',
-          auditDims: { length: roundTo(m.rrmLen, 2), width: m.rrmWidth, thickness: m.rrmHeight },
+          auditDims: { nos: nosForDims, length: rrmLenRounded, width: m.rrmWidth, thickness: m.rrmHeight },
           scopeCategory: 'fencing',
         };
       }
-      const verifiedVol = roundTo(auditInfo?.verifiedRrmVolume ?? m.rrmVol, 2);
+      const fieldVol = roundTo(m.rrmVol, 3);
       return {
-        auditQty: verifiedVol,
-        auditUnit: items.rrmWall.unit,
+        auditQty: fieldVol,
+        auditUnit: isLengthUnit(items.rrmWall.unit) ? m.volumeUnit : items.rrmWall.unit || m.volumeUnit,
         auditLabel: 'RMM Wall (Volume)',
-        auditDims: { length: roundTo(m.rrmLen, 2), width: m.rrmWidth, thickness: m.rrmHeight },
+        auditDims: { nos: nosForDims, length: rrmLenRounded, width: m.rrmWidth, thickness: m.rrmHeight },
         scopeCategory: 'fencing',
       };
     }
     case 'roadMeasurement': {
-      const verifiedRoadLen = roundTo(auditInfo?.verifiedRoadLength ?? m.roadLen, 2);
+      const roadLenRounded = roundTo(m.roadLen, 3);
+      const nosForDims = roadLenRounded > 0 ? 1 : 0;
+      const compareNos = basis === 'nos';
       const compareVol =
-        basis === 'volume' || (basis === 'auto' && hasL && hasW && hasT);
+        basis === 'volume' ||
+        (basis === 'auto' && ((hasL && hasW && hasT) || isVolumeUnit(item.unit) || isVolumeUnit(items.roadMeasurement.unit)));
       const compareArea =
-        basis === 'area' || (basis === 'auto' && hasL && hasW && !hasT);
+        basis === 'area' ||
+        (basis === 'auto' && ((hasL && hasW && !hasT) || isAreaUnit(item.unit) || isAreaUnit(items.roadMeasurement.unit)));
+
+      if (compareNos) {
+        const nosCount = project.roadSections.length;
+        return {
+          auditQty: nosCount,
+          auditUnit: 'pcs',
+          auditLabel: 'Road Alignment (Nos)',
+          auditDims: { nos: nosCount, length: roadLenRounded, width: m.roadWidth, thickness: m.roadDepth },
+          scopeCategory: 'road',
+        };
+      }
       if (compareVol) {
         return {
-          auditQty: roundTo(m.roadVol, 2),
+          auditQty: roundTo(m.roadVol, 3),
           auditUnit: m.volumeUnit,
           auditLabel: 'Road Alignment (Volume)',
-          auditDims: { length: verifiedRoadLen, width: m.roadWidth, thickness: m.roadDepth },
+          auditDims: { nos: nosForDims, length: roadLenRounded, width: m.roadWidth, thickness: m.roadDepth },
           scopeCategory: 'road',
         };
       }
       if (compareArea) {
         return {
-          auditQty: roundTo(m.roadArea, 2),
+          auditQty: roundTo(m.roadArea, 3),
           auditUnit: m.areaUnit,
           auditLabel: 'Road Alignment (Area)',
-          auditDims: { length: verifiedRoadLen, width: m.roadWidth, thickness: m.roadDepth },
+          auditDims: { nos: nosForDims, length: roadLenRounded, width: m.roadWidth, thickness: m.roadDepth },
           scopeCategory: 'road',
         };
       }
       return {
-        auditQty: verifiedRoadLen,
-        auditUnit: items.roadMeasurement.unit,
+        auditQty: roadLenRounded,
+        auditUnit: items.roadMeasurement.unit || m.lengthUnit,
         auditLabel: 'Road Alignment (Length)',
-        auditDims: { length: verifiedRoadLen, width: m.roadWidth, thickness: m.roadDepth },
+        auditDims: { nos: nosForDims, length: roadLenRounded, width: m.roadWidth, thickness: m.roadDepth },
         scopeCategory: 'road',
       };
     }
     case 'sideDrain': {
-      const verifiedDrain = roundTo(auditInfo?.verifiedSideDrainLength ?? m.sideDrainLen, 2);
+      const drainLenRounded = roundTo(m.sideDrainLen, 3);
+      const nosForDims = drainLenRounded > 0 ? 1 : 0;
+      if (basis === 'nos') {
+        const nosCount = project.roadSections.filter((s) => (s.sideDrainLengthMeters || 0) > 0).length;
+        return {
+          auditQty: nosCount,
+          auditUnit: 'pcs',
+          auditLabel: 'Road Side Drain (Nos)',
+          auditDims: { nos: nosCount, length: drainLenRounded },
+          scopeCategory: 'road',
+        };
+      }
+      if (basis === 'area') {
+        const effW = (useManualDims ? item.auditWidth : undefined) ?? item.width;
+        return {
+          auditQty: effW !== undefined ? roundTo(drainLenRounded * effW, 3) : 0,
+          auditUnit: m.areaUnit,
+          auditLabel: 'Road Side Drain (Area)',
+          auditDims: { nos: nosForDims, length: drainLenRounded, width: effW },
+          scopeCategory: 'road',
+        };
+      }
+      if (basis === 'volume') {
+        const effW = (useManualDims ? item.auditWidth : undefined) ?? item.width;
+        const effT = (useManualDims ? item.auditThickness : undefined) ?? item.thickness;
+        return {
+          auditQty: effW !== undefined && effT !== undefined ? roundTo(drainLenRounded * effW * effT, 3) : 0,
+          auditUnit: m.volumeUnit,
+          auditLabel: 'Road Side Drain (Volume)',
+          auditDims: { nos: nosForDims, length: drainLenRounded, width: effW, thickness: effT },
+          scopeCategory: 'road',
+        };
+      }
       return {
-        auditQty: verifiedDrain,
-        auditUnit: items.sideDrain.unit,
+        auditQty: drainLenRounded,
+        auditUnit: items.sideDrain.unit || m.lengthUnit,
         auditLabel: 'Road Side Drain',
-        auditDims: { length: verifiedDrain },
+        auditDims: { nos: nosForDims, length: drainLenRounded },
         scopeCategory: 'road',
       };
     }
     case 'custom': {
-      const customItem = customItems.find((c) => c.id === item.linkedCustomId);
+      const customItem = item.linkedCustomId ? customItemsById.get(item.linkedCustomId) : undefined;
       if (!customItem) {
         return {
           auditQty: item.verifiedOverride ?? null,
-          auditUnit: item.unit,
+          auditUnit: item.unit || getUnitForBasis(basis, m.lengthUnit, m.areaUnit, m.volumeUnit),
           auditLabel: 'Custom Item (Unlinked)',
           auditDims: {},
           scopeCategory: 'general',
         };
       }
-      const verifiedCustom = roundTo(auditInfo?.verifiedCustomItems?.[customItem.id] ?? customItem.quantity, 2);
+      const fieldCustomQty = roundTo(customItem.quantity, 3);
+      const customUnit =
+        basis === 'length' || basis === 'area' || basis === 'volume'
+          ? getUnitForBasis(basis, m.lengthUnit, m.areaUnit, m.volumeUnit, customItem.unit)
+          : customItem.unit;
+      const isLenCustom = basis === 'length' || (basis === 'auto' && isLengthUnit(customItem.unit));
       return {
-        auditQty: verifiedCustom,
-        auditUnit: customItem.unit,
+        auditQty: fieldCustomQty,
+        auditUnit: customUnit,
         auditLabel: customItem.name,
-        auditDims: {},
+        auditDims: isLenCustom ? { nos: fieldCustomQty > 0 ? 1 : 0, length: fieldCustomQty } : { nos: fieldCustomQty },
         scopeCategory: customItem.category,
       };
     }
@@ -535,7 +722,7 @@ export function getAuditTargetSnapshot(
       const hasOverride = item.verifiedOverride !== undefined && Number.isFinite(item.verifiedOverride);
       return {
         auditQty: hasOverride ? roundTo(item.verifiedOverride!, 3) : null,
-        auditUnit: item.unit,
+        auditUnit: item.unit || getUnitForBasis(basis, m.lengthUnit, m.areaUnit, m.volumeUnit),
         auditLabel: 'Manual Audit Verification',
         auditDims: {},
         scopeCategory: 'general',
@@ -551,21 +738,28 @@ export function computeEntityAuditComparisons(
   const list = project.entityMeasurements ?? [];
   if (list.length === 0) return [];
   const m = computeMeasurements(project);
+  const ctx = buildSnapshotContext(project);
 
   return list
     .map((item): EntityAuditComparisonRow => {
       const entityQty = calcEntityQuantity(item);
-      const snapshot = getAuditTargetSnapshot(project, item, m);
+      const snapshot = getAuditTargetSnapshot(project, item, m, ctx);
 
-      // Manual / explicit audit inputs take precedence, otherwise fallback to snapshot
-      const manualAuditQty = calcAuditQuantity(item);
-      const effectiveAuditDims: EntityAuditDimensionSnapshot = {
-        nos: item.auditNos !== undefined ? item.auditNos : snapshot.auditDims.nos,
-        length: item.auditLength !== undefined ? item.auditLength : snapshot.auditDims.length,
-        width: item.auditWidth !== undefined ? item.auditWidth : snapshot.auditDims.width,
-        thickness: item.auditThickness !== undefined ? item.auditThickness : snapshot.auditDims.thickness,
-      };
+      const isLinked = Boolean(item.linkedTarget && item.linkedTarget !== 'none');
+      const useManualAudit = !isLinked || Boolean(item.auditManualOverride);
 
+      const effectiveAuditDims: EntityAuditDimensionSnapshot = useManualAudit
+        ? {
+            nos: item.auditNos !== undefined ? item.auditNos : snapshot.auditDims.nos,
+            length: item.auditLength !== undefined ? item.auditLength : snapshot.auditDims.length,
+            width: item.auditWidth !== undefined ? item.auditWidth : snapshot.auditDims.width,
+            thickness: item.auditThickness !== undefined ? item.auditThickness : snapshot.auditDims.thickness,
+          }
+        : snapshot.auditDims;
+
+      // Manual / explicit audit inputs apply for standalone items or explicitly overridden rows;
+      // otherwise linked rows automatically extract live from Field Measurement Works (snapshot.auditQty).
+      const manualAuditQty = useManualAudit ? calcAuditQuantity(item, snapshot.auditDims) : null;
       const auditQty = manualAuditQty !== null ? manualAuditQty : snapshot.auditQty;
 
       const dimensionVariances: EntityAuditComparisonRow['dimensionVariances'] = {};
@@ -573,10 +767,10 @@ export function computeEntityAuditComparisons(
         dimensionVariances.nos = cleanVariance(effectiveAuditDims.nos, item.nos, 0);
       }
       if (item.length !== undefined && effectiveAuditDims.length !== undefined) {
-        dimensionVariances.length = cleanVariance(effectiveAuditDims.length, item.length, 2);
+        dimensionVariances.length = cleanVariance(effectiveAuditDims.length, item.length, 3);
       }
       if (item.width !== undefined && effectiveAuditDims.width !== undefined) {
-        dimensionVariances.width = cleanVariance(effectiveAuditDims.width, item.width, 2);
+        dimensionVariances.width = cleanVariance(effectiveAuditDims.width, item.width, 3);
       }
       if (item.thickness !== undefined && effectiveAuditDims.thickness !== undefined) {
         dimensionVariances.thickness = cleanVariance(effectiveAuditDims.thickness, item.thickness, 3);
@@ -612,7 +806,7 @@ export function computeEntityAuditComparisons(
         };
       }
 
-      const variance = cleanVariance(auditQty, entityQty, 2);
+      const variance = cleanVariance(auditQty, entityQty, 3);
       const variancePct =
         entityQty > 0
           ? roundTo(((auditQty - entityQty) / entityQty) * 100, 1)
@@ -625,11 +819,12 @@ export function computeEntityAuditComparisons(
       let status: EntityComparisonStatus = 'matched';
       let differenceType: 'matched' | 'excess' | 'underpayment' | 'pending' = 'matched';
 
-      if (entityAmount !== null && auditAmount !== null) {
-        if (entityAmount > auditAmount) {
+      const hasPositiveRate = rate !== undefined && rate > 0;
+      if (hasPositiveRate && amountVariance !== null) {
+        if (amountVariance < 0) {
           status = 'excess';
           differenceType = 'excess';
-        } else if (auditAmount > entityAmount) {
+        } else if (amountVariance > 0) {
           status = 'underpayment';
           differenceType = 'underpayment';
         } else {
@@ -637,10 +832,10 @@ export function computeEntityAuditComparisons(
           differenceType = 'matched';
         }
       } else {
-        if (entityQty > auditQty) {
+        if (variance < 0) {
           status = 'excess';
           differenceType = 'excess';
-        } else if (auditQty > entityQty) {
+        } else if (variance > 0) {
           status = 'underpayment';
           differenceType = 'underpayment';
         } else {
@@ -688,11 +883,13 @@ export function formatAuditDimensionsLabel(
   item: EntityMeasurementItem,
   auditDims?: EntityAuditDimensionSnapshot
 ): string {
+  const isLinked = Boolean(item.linkedTarget && item.linkedTarget !== 'none');
+  const useManual = !isLinked || Boolean(item.auditManualOverride);
   const parts: string[] = [];
-  const nos = item.auditNos ?? auditDims?.nos;
-  const len = item.auditLength ?? auditDims?.length;
-  const wid = item.auditWidth ?? auditDims?.width;
-  const thk = item.auditThickness ?? auditDims?.thickness;
+  const nos = useManual ? (item.auditNos ?? auditDims?.nos) : auditDims?.nos;
+  const len = useManual ? (item.auditLength ?? auditDims?.length) : auditDims?.length;
+  const wid = useManual ? (item.auditWidth ?? auditDims?.width) : auditDims?.width;
+  const thk = useManual ? (item.auditThickness ?? auditDims?.thickness) : auditDims?.thickness;
   if (nos !== undefined) parts.push(`Nos: ${nos}`);
   if (len !== undefined) parts.push(`L: ${len}`);
   if (wid !== undefined) parts.push(`W: ${wid}`);
@@ -715,7 +912,7 @@ export function buildPresetEntityItems(project: ConstructionProject): EntityMeas
       unit: items.anglePosts.unit,
       calcBasis: 'nos',
       nos: m.totalAngle > 0 ? m.totalAngle : undefined,
-      auditNos: m.totalAngle > 0 ? m.totalAngle : undefined,
+      auditManualOverride: false,
       updatedAt: now,
     });
   }
@@ -727,7 +924,7 @@ export function buildPresetEntityItems(project: ConstructionProject): EntityMeas
       unit: items.intermediatePosts.unit,
       calcBasis: 'nos',
       nos: m.totalIntermed > 0 ? m.totalIntermed : undefined,
-      auditNos: m.totalIntermed > 0 ? m.totalIntermed : undefined,
+      auditManualOverride: false,
       updatedAt: now,
     });
   }
@@ -739,7 +936,7 @@ export function buildPresetEntityItems(project: ConstructionProject): EntityMeas
       unit: items.strutPosts.unit,
       calcBasis: 'nos',
       nos: m.totalStrut > 0 ? m.totalStrut : undefined,
-      auditNos: m.totalStrut > 0 ? m.totalStrut : undefined,
+      auditManualOverride: false,
       updatedAt: now,
     });
   }
@@ -751,59 +948,58 @@ export function buildPresetEntityItems(project: ConstructionProject): EntityMeas
       unit: items.gatePosts.unit,
       calcBasis: 'nos',
       nos: m.totalGate > 0 ? m.totalGate : undefined,
-      auditNos: m.totalGate > 0 ? m.totalGate : undefined,
+      auditManualOverride: false,
       updatedAt: now,
     });
   }
   if (items.chainLinkMesh.enabled) {
+    const meshIsArea = isAreaUnit(items.chainLinkMesh.unit);
     presets.push({
       id: `ent-preset-mesh-${now}`,
       itemName: 'Chain-Link Mesh',
       linkedTarget: 'chainLinkMesh',
       unit: items.chainLinkMesh.unit,
       nos: 1,
-      length: m.meshLen > 0 ? m.meshLen : undefined,
+      length: m.meshLen > 0 ? roundTo(m.meshLen, 3) : undefined,
       width: m.meshWidth > 0 ? m.meshWidth : undefined,
-      auditNos: 1,
-      auditLength: m.meshLen > 0 ? m.meshLen : undefined,
-      auditWidth: m.meshWidth > 0 ? m.meshWidth : undefined,
-      calcBasis: 'auto',
+      calcBasis: meshIsArea ? 'area' : 'length',
+      auditManualOverride: false,
       updatedAt: now,
     });
   }
   if (items.rrmWall.enabled) {
+    const rrmIsLength = isLengthUnit(items.rrmWall.unit);
     presets.push({
       id: `ent-preset-rrm-${now}`,
       itemName: 'RMM Wall',
       linkedTarget: 'rrmWall',
       unit: items.rrmWall.unit,
       nos: 1,
-      length: m.rrmLen > 0 ? roundTo(m.rrmLen, 2) : undefined,
+      length: m.rrmLen > 0 ? roundTo(m.rrmLen, 3) : undefined,
       width: m.rrmWidth > 0 ? m.rrmWidth : undefined,
       thickness: m.rrmHeight > 0 ? m.rrmHeight : undefined,
-      auditNos: 1,
-      auditLength: m.rrmLen > 0 ? roundTo(m.rrmLen, 2) : undefined,
-      auditWidth: m.rrmWidth > 0 ? m.rrmWidth : undefined,
-      auditThickness: m.rrmHeight > 0 ? m.rrmHeight : undefined,
-      calcBasis: 'volume',
+      calcBasis: rrmIsLength ? 'length' : 'volume',
+      auditManualOverride: false,
       updatedAt: now,
     });
   }
   if (items.roadMeasurement.enabled) {
+    const roadBasis: EntityCalcBasis = isVolumeUnit(items.roadMeasurement.unit)
+      ? 'volume'
+      : isAreaUnit(items.roadMeasurement.unit)
+      ? 'area'
+      : 'length';
     presets.push({
       id: `ent-preset-road-${now}`,
       itemName: 'Road Alignment',
       linkedTarget: 'roadMeasurement',
       unit: items.roadMeasurement.unit,
       nos: 1,
-      length: m.roadLen > 0 ? m.roadLen : undefined,
+      length: m.roadLen > 0 ? roundTo(m.roadLen, 3) : undefined,
       width: m.roadWidth > 0 ? m.roadWidth : undefined,
       thickness: m.roadDepth > 0 ? m.roadDepth : undefined,
-      auditNos: 1,
-      auditLength: m.roadLen > 0 ? m.roadLen : undefined,
-      auditWidth: m.roadWidth > 0 ? m.roadWidth : undefined,
-      auditThickness: m.roadDepth > 0 ? m.roadDepth : undefined,
-      calcBasis: 'auto',
+      calcBasis: roadBasis,
+      auditManualOverride: false,
       updatedAt: now,
     });
   }
@@ -814,25 +1010,27 @@ export function buildPresetEntityItems(project: ConstructionProject): EntityMeas
       linkedTarget: 'sideDrain',
       unit: items.sideDrain.unit,
       nos: 1,
-      length: m.sideDrainLen > 0 ? m.sideDrainLen : undefined,
-      auditNos: 1,
-      auditLength: m.sideDrainLen > 0 ? m.sideDrainLen : undefined,
+      length: m.sideDrainLen > 0 ? roundTo(m.sideDrainLen, 3) : undefined,
       calcBasis: 'length',
+      auditManualOverride: false,
       updatedAt: now,
     });
   }
   customItems
     .filter((c) => c.enabled)
     .forEach((c, idx) => {
+      const isLen = isLengthUnit(c.unit);
+      const roundedQty = c.quantity > 0 ? roundTo(c.quantity, 3) : undefined;
       presets.push({
         id: `ent-preset-custom-${c.id}-${now}-${idx}`,
         itemName: c.name,
         linkedTarget: 'custom',
         linkedCustomId: c.id,
         unit: c.unit,
-        nos: c.quantity > 0 ? c.quantity : undefined,
-        auditNos: c.quantity > 0 ? c.quantity : undefined,
-        calcBasis: 'nos',
+        nos: isLen ? (roundedQty !== undefined ? 1 : undefined) : roundedQty,
+        ...(isLen && roundedQty !== undefined ? { length: roundedQty } : {}),
+        calcBasis: isLen ? 'length' : 'nos',
+        auditManualOverride: false,
         updatedAt: now,
       });
     });
@@ -870,8 +1068,8 @@ export function formatDiffLabel(
       hexColor: '#047857',
     };
   }
-  const absQty = Math.abs(qtyDiff);
-  const qtyFormatted = Number.isInteger(absQty) ? String(absQty) : absQty.toFixed(2);
+  const absQty = roundTo(Math.abs(qtyDiff), 3);
+  const qtyFormatted = Number.isInteger(absQty) ? String(absQty) : absQty.toFixed(3).replace(/\.?0+$/, '');
   const absCost =
     amountDiff !== undefined && amountDiff !== null
       ? Math.abs(amountDiff).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })

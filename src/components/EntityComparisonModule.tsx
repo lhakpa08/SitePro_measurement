@@ -5,10 +5,16 @@ import {
   EntityComparisonTarget,
   EntityMeasurementItem,
 } from '../types';
-import { getProjectSettings } from '../utils/geo';
+import {
+  getProjectSettings,
+  getUnitForBasis,
+  getUnitLabels,
+  isAreaUnit,
+  isLengthUnit,
+  isVolumeUnit,
+} from '../utils/geo';
 import {
   buildPresetEntityItems,
-  cleanVariance,
   computeEntityAuditComparisons,
   formatVariance,
   roundTo,
@@ -23,7 +29,7 @@ import {
   Clock,
   Scale,
   Copy,
-  DollarSign,
+  RefreshCw,
 } from 'lucide-react';
 
 interface EntityComparisonModuleProps {
@@ -55,7 +61,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
   const settings = getProjectSettings(project);
   const { items, customItems } = settings;
   const enabledCustom = customItems.filter((c) => c.enabled);
-  const lengthUnit = settings.unitSystem === 'imperial' ? 'ft' : 'm';
+  const { lengthUnit, areaUnit, volumeUnit } = getUnitLabels(settings);
 
   const entityItems = project.entityMeasurements ?? [];
   const comparisons = useMemo(() => computeEntityAuditComparisons(project, 'all'), [project]);
@@ -105,9 +111,8 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
       id: `ent-${now}-${Math.random().toString(36).slice(2, 6)}`,
       itemName: '',
       linkedTarget: 'none',
-      unit: items.rrmWall.unit || (settings.unitSystem === 'imperial' ? 'ft³' : 'm³'),
+      unit: items.rrmWall.unit || volumeUnit,
       nos: 1,
-      auditNos: 1,
       calcBasis: 'auto',
       updatedAt: now,
     };
@@ -143,25 +148,75 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
       auditLength: item.length,
       auditWidth: item.width,
       auditThickness: item.thickness,
+      auditManualOverride: true,
     });
   };
 
-  const handleCopyAllEntityToAudit = () => {
+  const handleResetRowToField = (itemId: string) => {
+    handleUpdateRow(itemId, {
+      auditNos: undefined,
+      auditLength: undefined,
+      auditWidth: undefined,
+      auditThickness: undefined,
+      verifiedOverride: undefined,
+      auditManualOverride: false,
+    });
+  };
+
+  const handleSyncAllFromFieldWorks = () => {
     const now = Date.now();
     applyProjectUpdate((latest) => {
       const list = latest.entityMeasurements ?? [];
       return {
         ...latest,
-        entityMeasurements: list.map((item) => ({
-          ...item,
-          auditNos: item.auditNos ?? item.nos,
-          auditLength: item.auditLength ?? item.length,
-          auditWidth: item.auditWidth ?? item.width,
-          auditThickness: item.auditThickness ?? item.thickness,
-          updatedAt: now,
-        })),
+        entityMeasurements: list.map((item) => {
+          const isLinked = Boolean(item.linkedTarget && item.linkedTarget !== 'none');
+          if (!isLinked) return item;
+          return {
+            ...item,
+            auditNos: undefined,
+            auditLength: undefined,
+            auditWidth: undefined,
+            auditThickness: undefined,
+            verifiedOverride: undefined,
+            auditManualOverride: false,
+            updatedAt: now,
+          };
+        }),
         updatedAt: now,
       };
+    });
+  };
+
+  const handleAuditDimChange = (
+    row: (typeof comparisons)[number],
+    field: 'auditNos' | 'auditLength' | 'auditWidth' | 'auditThickness',
+    val: number | undefined
+  ) => {
+    const item = row.item;
+    const isLinked = Boolean(item.linkedTarget && item.linkedTarget !== 'none');
+    if (!isLinked) {
+      handleUpdateRow(item.id, { [field]: val });
+      return;
+    }
+    const baseNos = item.auditManualOverride ? item.auditNos : row.auditDims.nos;
+    const baseLength = item.auditManualOverride ? item.auditLength : row.auditDims.length;
+    const baseWidth = item.auditManualOverride ? item.auditWidth : row.auditDims.width;
+    const baseThickness = item.auditManualOverride ? item.auditThickness : row.auditDims.thickness;
+    handleUpdateRow(item.id, {
+      auditNos: field === 'auditNos' ? val : baseNos,
+      auditLength: field === 'auditLength' ? val : baseLength,
+      auditWidth: field === 'auditWidth' ? val : baseWidth,
+      auditThickness: field === 'auditThickness' ? val : baseThickness,
+      auditManualOverride: true,
+    });
+  };
+
+  const handleBasisChange = (row: EntityMeasurementItem, nextBasis: EntityCalcBasis) => {
+    const nextUnit = getUnitForBasis(nextBasis, lengthUnit, areaUnit, volumeUnit, row.unit);
+    handleUpdateRow(row.id, {
+      calcBasis: nextBasis,
+      unit: nextUnit,
     });
   };
 
@@ -172,9 +227,15 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
       handleUpdateRow(row.id, {
         linkedTarget: 'custom',
         linkedCustomId: customId,
+        calcBasis: custom && isLengthUnit(custom.unit) ? 'length' : 'nos',
         unit: custom?.unit || row.unit,
         itemName: row.itemName.trim() ? row.itemName : custom?.name || row.itemName,
-        auditNos: row.auditNos ?? (custom && custom.quantity > 0 ? custom.quantity : undefined),
+        auditNos: undefined,
+        auditLength: undefined,
+        auditWidth: undefined,
+        auditThickness: undefined,
+        verifiedOverride: undefined,
+        auditManualOverride: false,
       });
       return;
     }
@@ -206,15 +267,19 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
       defaultTitle = 'Total Fence Posts';
     } else if (target === 'chainLinkMesh') {
       nextUnit = items.chainLinkMesh.unit;
-      nextBasis = 'auto';
+      nextBasis = isAreaUnit(items.chainLinkMesh.unit) ? 'area' : 'length';
       defaultTitle = 'Chain-Link Mesh';
     } else if (target === 'rrmWall') {
       nextUnit = items.rrmWall.unit;
-      nextBasis = 'volume';
+      nextBasis = isLengthUnit(items.rrmWall.unit) ? 'length' : 'volume';
       defaultTitle = 'RMM Wall';
     } else if (target === 'roadMeasurement') {
       nextUnit = items.roadMeasurement.unit;
-      nextBasis = 'auto';
+      nextBasis = isVolumeUnit(items.roadMeasurement.unit)
+        ? 'volume'
+        : isAreaUnit(items.roadMeasurement.unit)
+        ? 'area'
+        : 'length';
       defaultTitle = 'Road Alignment';
     } else if (target === 'sideDrain') {
       nextUnit = items.sideDrain.unit;
@@ -228,6 +293,16 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
       unit: nextUnit,
       calcBasis: nextBasis,
       itemName: row.itemName.trim() ? row.itemName : defaultTitle,
+      ...(target !== 'none'
+        ? {
+            auditNos: undefined,
+            auditLength: undefined,
+            auditWidth: undefined,
+            auditThickness: undefined,
+            verifiedOverride: undefined,
+            auditManualOverride: false,
+          }
+        : {}),
     });
   };
 
@@ -309,10 +384,10 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
   }, [comparisons]);
 
   const inputBase =
-    'w-full px-2.5 py-1.5 min-h-[38px] bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm text-slate-900 tabular-nums focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition';
+    'w-full px-2.5 py-1.5 min-h-[38px] bg-white border border-slate-200 rounded-lg text-xs sm:text-sm text-slate-900 tabular-nums focus:outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 transition';
 
   const auditInputBase =
-    'w-full px-2.5 py-1.5 min-h-[38px] bg-indigo-50/40 border border-indigo-200 rounded-lg text-xs sm:text-sm font-semibold text-indigo-950 tabular-nums focus:outline-none focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/20 transition';
+    'w-full px-2.5 py-1.5 min-h-[38px] bg-white border border-indigo-200 rounded-lg text-xs sm:text-sm font-semibold text-indigo-950 tabular-nums focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/15 transition';
 
   const captureHint = (row: EntityMeasurementItem, fieldSuffix: string, label: string, val?: number) => {
     if (!onCaptureLocation) return;
@@ -437,31 +512,31 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
           <button
             type="button"
             onClick={handleLoadSiteItems}
-            className="min-h-[42px] px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
+            className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
             title="Populate entity rows from active project items"
           >
-            <ListChecks className="w-4 h-4 text-indigo-600" />
+            <ListChecks className="w-4 h-4 text-slate-500" />
             <span>Load Site Items</span>
           </button>
 
-          {entityItems.length > 0 && (
+          {entityItems.some((e) => e.linkedTarget && e.linkedTarget !== 'none' && e.auditManualOverride) && (
             <button
               type="button"
-              onClick={handleCopyAllEntityToAudit}
-              className="min-h-[42px] px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
-              title="Copy all claimed Entity dimensions to Audit measurements"
+              onClick={handleSyncAllFromFieldWorks}
+              className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
+              title="Reset overridden Audit values to extract live from Field Measurement Works"
             >
-              <Copy className="w-4 h-4 text-indigo-700" />
-              <span>Copy All Entity → Audit</span>
+              <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Sync Audit from Field Works</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={handleAddRow}
-            className="min-h-[42px] px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
+            className="min-h-[40px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 text-amber-400" />
             <span>Add Measurement Item</span>
           </button>
         </div>
@@ -653,9 +728,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                             <select
                               value={item.calcBasis || 'auto'}
                               onChange={(e) =>
-                                handleUpdateRow(item.id, {
-                                  calcBasis: e.target.value as EntityCalcBasis,
-                                })
+                                handleBasisChange(item, e.target.value as EntityCalcBasis)
                               }
                               className={inputBase}
                             >
@@ -813,120 +886,156 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                   </div>
 
                   {/* Section B: Audit Verified Measurement */}
-                  <div className="bg-indigo-50/40 border border-indigo-200 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider">
-                        2. Audit Verified Measurement
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleCopyEntityToAudit(item)}
-                          className="px-2 py-0.5 bg-white hover:bg-indigo-50 border border-indigo-300 text-indigo-700 text-[10px] font-semibold rounded inline-flex items-center gap-1 transition"
-                          title="Copy entity values to audit"
-                        >
-                          <Copy className="w-3 h-3" />
-                          <span>Copy Entity</span>
-                        </button>
-                        <div className="text-right">
-                          <div className="text-xs font-extrabold text-indigo-700 tabular-nums">
-                            Qty: {row.auditQty !== null ? `${row.auditQty} ${row.auditUnit || item.unit}` : 'Pending'}
+                  {(() => {
+                    const isLinked = Boolean(item.linkedTarget && item.linkedTarget !== 'none');
+                    const isManualOverride = Boolean(item.auditManualOverride);
+                    const isAutoExtracted = isLinked && !isManualOverride;
+                    const dispAuditNos = isAutoExtracted
+                      ? row.auditDims.nos ?? ''
+                      : item.auditNos ?? '';
+                    const dispAuditLen = isAutoExtracted
+                      ? row.auditDims.length ?? ''
+                      : item.auditLength ?? '';
+                    const dispAuditWid = isAutoExtracted
+                      ? row.auditDims.width ?? ''
+                      : item.auditWidth ?? '';
+                    const dispAuditThk = isAutoExtracted
+                      ? row.auditDims.thickness ?? ''
+                      : item.auditThickness ?? '';
+
+                    return (
+                      <div className="bg-indigo-50/40 border border-indigo-200 rounded-xl p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider">
+                              2. Audit Verified Measurement
+                            </span>
+                            {isAutoExtracted && (
+                              <span className="text-[11px] font-medium text-emerald-700">
+                                &middot; From Field
+                              </span>
+                            )}
+                            {isLinked && isManualOverride && (
+                              <span className="text-[11px] font-medium text-amber-700">
+                                &middot; Manual override
+                              </span>
+                            )}
                           </div>
-                          {row.auditAmount !== null && (
-                            <div className="text-[11px] font-bold text-indigo-900 tabular-nums">
-                              Amount: {row.auditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <div className="flex items-center gap-2">
+                            {isLinked && isManualOverride ? (
+                              <button
+                                type="button"
+                                onClick={() => handleResetRowToField(item.id)}
+                                className="px-2 py-0.5 bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-700 text-[10px] font-semibold rounded inline-flex items-center gap-1 transition"
+                                title="Re-extract live from Field Measurement Works"
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                <span>Sync Field</span>
+                              </button>
+                            ) : !isLinked ? (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyEntityToAudit(item)}
+                                className="px-2 py-0.5 bg-white hover:bg-indigo-50 border border-indigo-300 text-indigo-700 text-[10px] font-semibold rounded inline-flex items-center gap-1 transition"
+                                title="Copy entity values to audit"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>Copy Entity</span>
+                              </button>
+                            ) : null}
+                            <div className="text-right">
+                              <div className="text-xs font-extrabold text-indigo-700 tabular-nums">
+                                Qty: {row.auditQty !== null ? `${row.auditQty} ${row.auditUnit || item.unit}` : 'Pending'}
+                              </div>
+                              {row.auditAmount !== null && (
+                                <div className="text-[11px] font-bold text-indigo-900 tabular-nums">
+                                  Amount: {row.auditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                              )}
                             </div>
-                          )}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div>
+                            <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
+                              Audit Nos
+                            </label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              step="any"
+                              min="0"
+                              value={dispAuditNos}
+                              onFocus={() => captureHint(item, 'audit:nos', 'Audit Nos', typeof dispAuditNos === 'number' ? dispAuditNos : undefined)}
+                              onClick={() => captureHint(item, 'audit:nos', 'Audit Nos', typeof dispAuditNos === 'number' ? dispAuditNos : undefined)}
+                              onChange={(e) =>
+                                handleAuditDimChange(row, 'auditNos', parseOptionalNum(e.target.value))
+                              }
+                              placeholder={row.auditDims.nos !== undefined ? String(row.auditDims.nos) : '1'}
+                              className={auditInputBase}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
+                              Audit Length ({lengthUnit})
+                            </label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              step="any"
+                              min="0"
+                              value={dispAuditLen}
+                              onFocus={() => captureHint(item, 'audit:length', 'Audit Length', typeof dispAuditLen === 'number' ? dispAuditLen : undefined)}
+                              onClick={() => captureHint(item, 'audit:length', 'Audit Length', typeof dispAuditLen === 'number' ? dispAuditLen : undefined)}
+                              onChange={(e) =>
+                                handleAuditDimChange(row, 'auditLength', parseOptionalNum(e.target.value))
+                              }
+                              placeholder={row.auditDims.length !== undefined ? String(row.auditDims.length) : '0.00'}
+                              className={auditInputBase}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
+                              Audit Width ({lengthUnit})
+                            </label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              step="any"
+                              min="0"
+                              value={dispAuditWid}
+                              onFocus={() => captureHint(item, 'audit:width', 'Audit Width', typeof dispAuditWid === 'number' ? dispAuditWid : undefined)}
+                              onClick={() => captureHint(item, 'audit:width', 'Audit Width', typeof dispAuditWid === 'number' ? dispAuditWid : undefined)}
+                              onChange={(e) =>
+                                handleAuditDimChange(row, 'auditWidth', parseOptionalNum(e.target.value))
+                              }
+                              placeholder={row.auditDims.width !== undefined ? String(row.auditDims.width) : '0.00'}
+                              className={auditInputBase}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
+                              Audit Thick. ({lengthUnit})
+                            </label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              step="any"
+                              min="0"
+                              value={dispAuditThk}
+                              onFocus={() => captureHint(item, 'audit:thickness', 'Audit Thickness', typeof dispAuditThk === 'number' ? dispAuditThk : undefined)}
+                              onClick={() => captureHint(item, 'audit:thickness', 'Audit Thickness', typeof dispAuditThk === 'number' ? dispAuditThk : undefined)}
+                              onChange={(e) =>
+                                handleAuditDimChange(row, 'auditThickness', parseOptionalNum(e.target.value))
+                              }
+                              placeholder={row.auditDims.thickness !== undefined ? String(row.auditDims.thickness) : '0.00'}
+                              className={auditInputBase}
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <div>
-                        <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
-                          Audit Nos
-                        </label>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="any"
-                          min="0"
-                          value={item.auditNos ?? ''}
-                          onFocus={() => captureHint(item, 'audit:nos', 'Audit Nos', item.auditNos)}
-                          onClick={() => captureHint(item, 'audit:nos', 'Audit Nos', item.auditNos)}
-                          onChange={(e) =>
-                            handleUpdateRow(item.id, {
-                              auditNos: parseOptionalNum(e.target.value),
-                            })
-                          }
-                          placeholder={row.auditDims.nos !== undefined ? String(row.auditDims.nos) : '1'}
-                          className={auditInputBase}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
-                          Audit Length ({lengthUnit})
-                        </label>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="any"
-                          min="0"
-                          value={item.auditLength ?? ''}
-                          onFocus={() => captureHint(item, 'audit:length', 'Audit Length', item.auditLength)}
-                          onClick={() => captureHint(item, 'audit:length', 'Audit Length', item.auditLength)}
-                          onChange={(e) =>
-                            handleUpdateRow(item.id, {
-                              auditLength: parseOptionalNum(e.target.value),
-                            })
-                          }
-                          placeholder={row.auditDims.length !== undefined ? String(row.auditDims.length) : '0.00'}
-                          className={auditInputBase}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
-                          Audit Width ({lengthUnit})
-                        </label>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="any"
-                          min="0"
-                          value={item.auditWidth ?? ''}
-                          onFocus={() => captureHint(item, 'audit:width', 'Audit Width', item.auditWidth)}
-                          onClick={() => captureHint(item, 'audit:width', 'Audit Width', item.auditWidth)}
-                          onChange={(e) =>
-                            handleUpdateRow(item.id, {
-                              auditWidth: parseOptionalNum(e.target.value),
-                            })
-                          }
-                          placeholder={row.auditDims.width !== undefined ? String(row.auditDims.width) : '0.00'}
-                          className={auditInputBase}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
-                          Audit Thick. ({lengthUnit})
-                        </label>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="any"
-                          min="0"
-                          value={item.auditThickness ?? ''}
-                          onFocus={() => captureHint(item, 'audit:thickness', 'Audit Thickness', item.auditThickness)}
-                          onClick={() => captureHint(item, 'audit:thickness', 'Audit Thickness', item.auditThickness)}
-                          onChange={(e) =>
-                            handleUpdateRow(item.id, {
-                              auditThickness: parseOptionalNum(e.target.value),
-                            })
-                          }
-                          placeholder={row.auditDims.thickness !== undefined ? String(row.auditDims.thickness) : '0.00'}
-                          className={auditInputBase}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {/* Section C: Variance & Audit Status */}
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
@@ -1038,13 +1147,14 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                           placeholder="Item description"
                           className={`${inputBase} font-semibold`}
                         />
-                        <div className="flex gap-1.5">
+                        <div className="flex gap-1">
                           <select
                             value={getSelectValue(item)}
                             onChange={(e) => handleTargetSelect(item, e.target.value)}
-                            className="w-3/5 px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px] text-slate-700 focus:outline-none focus:border-indigo-500"
+                            aria-label="Linked audit target"
+                            className="w-1/2 px-1.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] text-slate-700 focus:outline-none focus:border-indigo-500"
                           >
-                            <option value="none">Standalone / Manual</option>
+                            <option value="none">Standalone</option>
                             <option value="angle_post">Angle Post</option>
                             <option value="intermediate_post">Intermediate Posts</option>
                             <option value="strut_post">Strut Posts</option>
@@ -1063,18 +1173,26 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                           <select
                             value={item.calcBasis || 'auto'}
                             onChange={(e) =>
-                              handleUpdateRow(item.id, {
-                                calcBasis: e.target.value as EntityCalcBasis,
-                              })
+                              handleBasisChange(item, e.target.value as EntityCalcBasis)
                             }
-                            className="w-2/5 px-1.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] text-slate-700 focus:outline-none focus:border-indigo-500"
+                            aria-label="Calculation basis"
+                            className="w-[30%] px-1 py-1 bg-white border border-slate-200 rounded-md text-[11px] text-slate-700 capitalize focus:outline-none focus:border-indigo-500"
                           >
-                            {BASIS_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.value}
-                              </option>
-                            ))}
+                            <option value="auto">Auto</option>
+                            <option value="nos">Nos</option>
+                            <option value="length">Length</option>
+                            <option value="area">Area</option>
+                            <option value="volume">Volume</option>
                           </select>
+                          <input
+                            type="text"
+                            value={item.unit}
+                            onChange={(e) => handleUpdateRow(item.id, { unit: e.target.value })}
+                            placeholder="Unit"
+                            aria-label="Measurement unit"
+                            title="Unit (auto-synced with basis or editable)"
+                            className="w-[20%] px-1.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-mono text-center text-slate-800 focus:outline-none focus:border-indigo-500"
+                          />
                         </div>
                         <input
                           type="text"
@@ -1189,102 +1307,131 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                         )}
                       </td>
 
-                      {/* Audit Inputs */}
-                      <td className="py-2 px-1.5 bg-indigo-50/20">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="any"
-                          min="0"
-                          value={item.auditNos ?? ''}
-                          onFocus={() => captureHint(item, 'audit:nos', 'Audit Nos', item.auditNos)}
-                          onClick={() => captureHint(item, 'audit:nos', 'Audit Nos', item.auditNos)}
-                          onChange={(e) =>
-                            handleUpdateRow(item.id, {
-                              auditNos: parseOptionalNum(e.target.value),
-                            })
-                          }
-                          placeholder={row.auditDims.nos !== undefined ? String(row.auditDims.nos) : '1'}
-                          className={auditInputBase}
-                        />
-                      </td>
-                      <td className="py-2 px-1.5 bg-indigo-50/20">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="any"
-                          min="0"
-                          value={item.auditLength ?? ''}
-                          onFocus={() => captureHint(item, 'audit:length', 'Audit Length', item.auditLength)}
-                          onClick={() => captureHint(item, 'audit:length', 'Audit Length', item.auditLength)}
-                          onChange={(e) =>
-                            handleUpdateRow(item.id, {
-                              auditLength: parseOptionalNum(e.target.value),
-                            })
-                          }
-                          placeholder={row.auditDims.length !== undefined ? String(row.auditDims.length) : '0.00'}
-                          className={auditInputBase}
-                        />
-                      </td>
-                      <td className="py-2 px-1.5 bg-indigo-50/20">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="any"
-                          min="0"
-                          value={item.auditWidth ?? ''}
-                          onFocus={() => captureHint(item, 'audit:width', 'Audit Width', item.auditWidth)}
-                          onClick={() => captureHint(item, 'audit:width', 'Audit Width', item.auditWidth)}
-                          onChange={(e) =>
-                            handleUpdateRow(item.id, {
-                              auditWidth: parseOptionalNum(e.target.value),
-                            })
-                          }
-                          placeholder={row.auditDims.width !== undefined ? String(row.auditDims.width) : '0.00'}
-                          className={auditInputBase}
-                        />
-                      </td>
-                      <td className="py-2 px-1.5 bg-indigo-50/20">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          step="any"
-                          min="0"
-                          value={item.auditThickness ?? ''}
-                          onFocus={() => captureHint(item, 'audit:thickness', 'Audit Thickness', item.auditThickness)}
-                          onClick={() => captureHint(item, 'audit:thickness', 'Audit Thickness', item.auditThickness)}
-                          onChange={(e) =>
-                            handleUpdateRow(item.id, {
-                              auditThickness: parseOptionalNum(e.target.value),
-                            })
-                          }
-                          placeholder={row.auditDims.thickness !== undefined ? String(row.auditDims.thickness) : '0.00'}
-                          className={auditInputBase}
-                        />
-                      </td>
-                      <td className="py-2 px-2 text-right border-r border-indigo-200 bg-indigo-50/40">
-                        <div className="flex items-center justify-between gap-1 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => handleCopyEntityToAudit(item)}
-                            title="Copy Entity Claimed dimensions into Audit fields"
-                            className="p-1 rounded text-indigo-600 hover:bg-indigo-100 transition"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                          <div className="font-extrabold text-indigo-700 text-xs sm:text-sm">
-                            {row.auditQty !== null ? row.auditQty : 'Pending'}{' '}
-                            <span className="text-[10px] font-normal text-indigo-500">
-                              {row.auditUnit || item.unit}
-                            </span>
-                          </div>
-                        </div>
-                        {row.auditAmount !== null && (
-                          <div className="text-[11px] font-bold text-indigo-900 mt-0.5">
-                            Amt: {row.auditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                        )}
-                      </td>
+                      {/* Audit Inputs (Live-extracted from Field Measurement Works when linked) */}
+                      {(() => {
+                        const isLinked = Boolean(item.linkedTarget && item.linkedTarget !== 'none');
+                        const isManualOverride = Boolean(item.auditManualOverride);
+                        const isAutoExtracted = isLinked && !isManualOverride;
+                        const dispAuditNos = isAutoExtracted
+                          ? row.auditDims.nos ?? ''
+                          : item.auditNos ?? '';
+                        const dispAuditLen = isAutoExtracted
+                          ? row.auditDims.length ?? ''
+                          : item.auditLength ?? '';
+                        const dispAuditWid = isAutoExtracted
+                          ? row.auditDims.width ?? ''
+                          : item.auditWidth ?? '';
+                        const dispAuditThk = isAutoExtracted
+                          ? row.auditDims.thickness ?? ''
+                          : item.auditThickness ?? '';
+
+                        return (
+                          <>
+                            <td className="py-2 px-1.5 bg-indigo-50/20">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="any"
+                                min="0"
+                                value={dispAuditNos}
+                                onFocus={() => captureHint(item, 'audit:nos', 'Audit Nos', typeof dispAuditNos === 'number' ? dispAuditNos : undefined)}
+                                onClick={() => captureHint(item, 'audit:nos', 'Audit Nos', typeof dispAuditNos === 'number' ? dispAuditNos : undefined)}
+                                onChange={(e) =>
+                                  handleAuditDimChange(row, 'auditNos', parseOptionalNum(e.target.value))
+                                }
+                                placeholder={row.auditDims.nos !== undefined ? String(row.auditDims.nos) : '1'}
+                                className={auditInputBase}
+                              />
+                            </td>
+                            <td className="py-2 px-1.5 bg-indigo-50/20">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="any"
+                                min="0"
+                                value={dispAuditLen}
+                                onFocus={() => captureHint(item, 'audit:length', 'Audit Length', typeof dispAuditLen === 'number' ? dispAuditLen : undefined)}
+                                onClick={() => captureHint(item, 'audit:length', 'Audit Length', typeof dispAuditLen === 'number' ? dispAuditLen : undefined)}
+                                onChange={(e) =>
+                                  handleAuditDimChange(row, 'auditLength', parseOptionalNum(e.target.value))
+                                }
+                                placeholder={row.auditDims.length !== undefined ? String(row.auditDims.length) : '0.00'}
+                                className={auditInputBase}
+                              />
+                            </td>
+                            <td className="py-2 px-1.5 bg-indigo-50/20">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="any"
+                                min="0"
+                                value={dispAuditWid}
+                                onFocus={() => captureHint(item, 'audit:width', 'Audit Width', typeof dispAuditWid === 'number' ? dispAuditWid : undefined)}
+                                onClick={() => captureHint(item, 'audit:width', 'Audit Width', typeof dispAuditWid === 'number' ? dispAuditWid : undefined)}
+                                onChange={(e) =>
+                                  handleAuditDimChange(row, 'auditWidth', parseOptionalNum(e.target.value))
+                                }
+                                placeholder={row.auditDims.width !== undefined ? String(row.auditDims.width) : '0.00'}
+                                className={auditInputBase}
+                              />
+                            </td>
+                            <td className="py-2 px-1.5 bg-indigo-50/20">
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="any"
+                                min="0"
+                                value={dispAuditThk}
+                                onFocus={() => captureHint(item, 'audit:thickness', 'Audit Thickness', typeof dispAuditThk === 'number' ? dispAuditThk : undefined)}
+                                onClick={() => captureHint(item, 'audit:thickness', 'Audit Thickness', typeof dispAuditThk === 'number' ? dispAuditThk : undefined)}
+                                onChange={(e) =>
+                                  handleAuditDimChange(row, 'auditThickness', parseOptionalNum(e.target.value))
+                                }
+                                placeholder={row.auditDims.thickness !== undefined ? String(row.auditDims.thickness) : '0.00'}
+                                className={auditInputBase}
+                              />
+                            </td>
+                            <td className="py-2 px-2 text-right border-r border-indigo-200 bg-indigo-50/40">
+                              <div className="flex items-center justify-between gap-1 pt-1">
+                                {isLinked && isManualOverride ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleResetRowToField(item.id)}
+                                    title="Re-extract live from Field Measurement Works"
+                                    className="p-1 rounded text-emerald-700 hover:bg-emerald-100 transition"
+                                  >
+                                    <RefreshCw className="w-3 h-3" />
+                                  </button>
+                                ) : !isLinked ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyEntityToAudit(item)}
+                                    title="Copy Entity Claimed dimensions into Audit fields"
+                                    className="p-1 rounded text-indigo-600 hover:bg-indigo-100 transition"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                  ) : (
+                                  <span className="text-[10px] font-medium text-emerald-700">
+                                    Field
+                                  </span>
+                                )}
+                                <div className="font-extrabold text-indigo-700 text-xs sm:text-sm">
+                                  {row.auditQty !== null ? row.auditQty : 'Pending'}{' '}
+                                  <span className="text-[10px] font-normal text-indigo-500">
+                                    {row.auditUnit || item.unit}
+                                  </span>
+                                </div>
+                              </div>
+                              {row.auditAmount !== null && (
+                                <div className="text-[11px] font-bold text-indigo-900 mt-0.5">
+                                  Amt: {row.auditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </div>
+                              )}
+                            </td>
+                          </>
+                        );
+                      })()}
 
                       {/* Variance & Status */}
                       <td className="py-2.5 px-3 text-right">

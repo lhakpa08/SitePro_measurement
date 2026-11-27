@@ -1,5 +1,5 @@
 import { ConstructionProject, GpsCoordinate, InputLocationPoint } from '../types';
-import { getProjectSettings, formatChainage } from './geo';
+import { getProjectSettings, formatChainage, isAreaUnit, isLengthUnit } from './geo';
 import {
   buildSiteStaticMapUrl,
   getGoogleMapsApiKey,
@@ -11,6 +11,7 @@ import {
   computeEntityAuditComparisons,
   computeMeasurements,
   formatAuditDimensionsLabel,
+  formatDiffLabel,
   formatEntityDimensionsLabel,
   formatVariance,
   ReportMeasurements,
@@ -139,11 +140,15 @@ export function buildMeasuredSummaryRows(
     }
     if (items.chainLinkMesh.enabled && m.meshLen > 0) {
       const gps = project.fenceMeshSegments[0]?.gps || getLatestFieldGps(project, 'chainLinkMesh');
+      const meshIsArea = isAreaUnit(items.chainLinkMesh.unit);
+      const meshLenUnit = meshIsArea ? m.lengthUnit : items.chainLinkMesh.unit;
       rows.push({
         category: 'Fencing',
         item: 'Chain-Link Mesh',
-        details: `L: ${m.meshLen} ${items.chainLinkMesh.unit} × W: ${m.meshWidth} ${m.lengthUnit} (Area: ${m.meshArea.toFixed(2)} ${m.areaUnit})`,
-        quantity: m.meshLen.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        details: `L: ${m.meshLen} ${meshLenUnit} × W: ${m.meshWidth} ${m.lengthUnit} (Area: ${m.meshArea.toFixed(2)} ${m.areaUnit})`,
+        quantity: meshIsArea
+          ? m.meshArea.toFixed(2)
+          : m.meshLen.toLocaleString(undefined, { maximumFractionDigits: 2 }),
         unit: items.chainLinkMesh.unit,
         capturedGps: formatGpsShort(gps),
       });
@@ -155,6 +160,7 @@ export function buildMeasuredSummaryRows(
       m.rrmHeightEntries.length > 0;
     if (items.rrmWall.enabled && hasRrmData) {
       const gps = project.rrmWalls[0]?.gps || getLatestFieldGps(project, 'rrmWall');
+      const rrmIsLength = isLengthUnit(items.rrmWall.unit);
       const wDetail =
         m.rrmWidthEntries.length > 0
           ? `W [${m.rrmWidthEntries.join(', ')}] Avg ${m.rrmWidth}`
@@ -166,8 +172,8 @@ export function buildMeasuredSummaryRows(
       rows.push({
         category: 'Masonry',
         item: 'RMM Wall',
-        details: `L: ${m.rrmLen.toFixed(2)} ${m.lengthUnit} × ${wDetail} ${m.lengthUnit} × ${hDetail} ${m.lengthUnit}`,
-        quantity: m.rrmVol.toFixed(2),
+        details: `L: ${m.rrmLen.toFixed(2)} ${m.lengthUnit} × ${wDetail} ${m.lengthUnit} × ${hDetail} ${m.lengthUnit} (Vol: ${m.rrmVol.toFixed(2)} ${m.volumeUnit})`,
+        quantity: rrmIsLength ? m.rrmLen.toFixed(2) : m.rrmVol.toFixed(2),
         unit: items.rrmWall.unit,
         capturedGps: formatGpsShort(gps),
       });
@@ -303,11 +309,12 @@ export function buildAllRecordedInputs(
     }
     if (items.chainLinkMesh.enabled && m.meshLen > 0) {
       const meshGps = project.fenceMeshSegments[0]?.gps || getLatestFieldGps(project, 'chainLinkMesh');
+      const meshLenUnit = isAreaUnit(items.chainLinkMesh.unit) ? m.lengthUnit : items.chainLinkMesh.unit;
       rows.push({
         category: 'Fencing',
         fieldLabel: 'Chain-Link Mesh Length',
-        rawInput: `${m.meshLen} ${items.chainLinkMesh.unit}`,
-        computedTotal: `${m.meshLen.toLocaleString()} ${items.chainLinkMesh.unit}`,
+        rawInput: `${m.meshLen} ${meshLenUnit}`,
+        computedTotal: `${m.meshLen.toLocaleString()} ${meshLenUnit}`,
         capturedGps: formatGpsShort(meshGps),
       });
       if (m.meshWidth > 0) {
@@ -351,7 +358,7 @@ export function buildAllRecordedInputs(
           m.rrmHeightEntries.length > 0
             ? `Samples (${m.rrmHeightEntries.length}): ${m.rrmHeightEntries.join(', ')} ${m.lengthUnit}`
             : `Single entry: ${m.rrmHeight} ${m.lengthUnit}`,
-        computedTotal: `Avg: ${m.rrmHeight.toFixed(2)} ${m.lengthUnit} | Vol: ${m.rrmVol.toFixed(2)} ${items.rrmWall.unit}`,
+        computedTotal: `Avg: ${m.rrmHeight.toFixed(2)} ${m.lengthUnit} | Vol: ${m.rrmVol.toFixed(2)} ${m.volumeUnit}`,
         capturedGps: formatGpsShort(rrmGps),
       });
     }
@@ -1207,15 +1214,21 @@ export function buildStandaloneReportHtml(
       const diff = cleanVariance(vp, m.totalPosts, 0);
       auditRows.push(`<tr><td>Fence Posts Total</td><td class="num">${m.totalPosts} ${escapeHtml(m.postUnit)}</td><td class="num">${vp} ${escapeHtml(m.postUnit)}</td><td class="num">${escapeHtml(formatVariance(diff, 0))} ${escapeHtml(m.postUnit)}</td></tr>`);
     }
-    if (items.chainLinkMesh.enabled && (m.meshLen > 0 || (a.verifiedMeshLength ?? 0) > 0)) {
-      const vm = a.verifiedMeshLength ?? m.meshLen;
-      const diff = cleanVariance(vm, m.meshLen, 2);
-      auditRows.push(`<tr><td>Chain-Link Mesh Length</td><td class="num">${m.meshLen} ${escapeHtml(items.chainLinkMesh.unit)}</td><td class="num">${vm} ${escapeHtml(items.chainLinkMesh.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(items.chainLinkMesh.unit)}</td></tr>`);
+    const meshUnitIsArea = isAreaUnit(items.chainLinkMesh.unit);
+    const loggedMesh = roundTo(meshUnitIsArea ? m.meshArea : m.meshLen, 2);
+    if (items.chainLinkMesh.enabled && (loggedMesh > 0 || (a.verifiedMeshLength ?? 0) > 0)) {
+      const vm = a.verifiedMeshLength ?? loggedMesh;
+      const diff = cleanVariance(vm, loggedMesh, 2);
+      const meshLabel = meshUnitIsArea ? 'Chain-Link Mesh Area' : 'Chain-Link Mesh Length';
+      auditRows.push(`<tr><td>${meshLabel}</td><td class="num">${loggedMesh} ${escapeHtml(items.chainLinkMesh.unit)}</td><td class="num">${vm} ${escapeHtml(items.chainLinkMesh.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(items.chainLinkMesh.unit)}</td></tr>`);
     }
-    if (items.rrmWall.enabled && (m.rrmVol > 0 || (a.verifiedRrmVolume ?? 0) > 0)) {
-      const vr = a.verifiedRrmVolume ?? roundTo(m.rrmVol, 2);
-      const diff = cleanVariance(vr, roundTo(m.rrmVol, 2), 2);
-      auditRows.push(`<tr><td>RMM Wall Volume</td><td class="num">${m.rrmVol.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td><td class="num">${vr.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td><td class="num">${diff > 0 ? `+${diff.toFixed(2)}` : diff.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td></tr>`);
+    const rrmUnitIsLength = isLengthUnit(items.rrmWall.unit);
+    const loggedRrm = roundTo(rrmUnitIsLength ? m.rrmLen : m.rrmVol, 2);
+    if (items.rrmWall.enabled && (loggedRrm > 0 || (a.verifiedRrmVolume ?? 0) > 0)) {
+      const vr = a.verifiedRrmVolume ?? loggedRrm;
+      const diff = cleanVariance(vr, loggedRrm, 2);
+      const rrmLabel = rrmUnitIsLength ? 'RMM Wall Length' : 'RMM Wall Volume';
+      auditRows.push(`<tr><td>${rrmLabel}</td><td class="num">${loggedRrm.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td><td class="num">${vr.toFixed(2)} ${escapeHtml(items.rrmWall.unit)}</td><td class="num">${escapeHtml(formatVariance(diff, 2))} ${escapeHtml(items.rrmWall.unit)}</td></tr>`);
     }
     if (items.roadMeasurement.enabled && (m.roadLen > 0 || (a.verifiedRoadLength ?? 0) > 0)) {
       const vrd = a.verifiedRoadLength ?? m.roadLen;
@@ -1249,7 +1262,12 @@ export function buildStandaloneReportHtml(
       row.item.length !== undefined ||
       row.item.width !== undefined ||
       row.item.thickness !== undefined ||
+      row.item.auditNos !== undefined ||
+      row.item.auditLength !== undefined ||
+      row.item.auditWidth !== undefined ||
+      row.item.auditThickness !== undefined ||
       row.item.verifiedOverride !== undefined ||
+      (row.item.rate !== undefined && row.item.rate > 0) ||
       row.entityQty > 0
   );
 
@@ -1258,13 +1276,6 @@ export function buildStandaloneReportHtml(
   const entitySecNum = entityComparisons.length > 0 ? nextSectionNum++ : 0;
   const auditSecNum = scope === 'all' && project.auditInfo && (auditRows.length > 0 || project.auditInfo.generalRemarks || project.auditInfo.auditorName) ? nextSectionNum++ : 0;
   const mapSecNum = nextSectionNum++;
-
-  const entityStatusLabel = (status: string) => {
-    if (status === 'matched') return 'Matched';
-    if (status === 'shortfall') return 'Shortfall (Overclaimed)';
-    if (status === 'excess') return 'Excess Verified';
-    return 'Pending Audit';
-  };
 
   const hasAnyRates = entityComparisons.some((r) => r.rate !== undefined && r.rate > 0);
   const totalEntityAmount = roundTo(
@@ -1275,25 +1286,24 @@ export function buildStandaloneReportHtml(
     entityComparisons.reduce((sum, r) => sum + (r.auditAmount ?? 0), 0),
     2
   );
-  const totalAmountVariance = hasAnyRates
-    ? cleanVariance(totalAuditAmount, totalEntityAmount, 2)
-    : null;
+  let netOutcome: 'excess' | 'underpayment' | 'matched' = 'matched';
+  let netDiff = 0;
+  if (totalEntityAmount > totalAuditAmount) {
+    netOutcome = 'excess';
+    netDiff = roundTo(totalEntityAmount - totalAuditAmount, 2);
+  } else if (totalAuditAmount > totalEntityAmount) {
+    netOutcome = 'underpayment';
+    netDiff = roundTo(totalAuditAmount - totalEntityAmount, 2);
+  }
 
   const entityRowsHtml = entityComparisons
     .map((row, idx) => {
       const unit = row.auditUnit || row.item.unit;
+      const diffInfo = formatDiffLabel(row.status, row.variance, unit, row.amountVariance);
       const varText =
         row.variance === null
           ? 'Pending'
-          : `${formatVariance(row.variance, 2)} ${unit}${row.variancePct !== null && row.variance !== 0 ? ` (${row.variancePct > 0 ? `+${row.variancePct}` : row.variancePct}%)` : ''}`;
-      const varColor =
-        row.variance === null
-          ? '#64748b'
-          : row.variance < 0
-          ? '#dc2626'
-          : row.variance > 0
-          ? '#2563eb'
-          : '#047857';
+          : `${diffInfo.qtyText}${row.variancePct !== null && row.variance !== 0 ? ` (${row.variancePct > 0 ? `+${row.variancePct}` : row.variancePct}%)` : ''}`;
 
       const rateText = row.rate !== undefined ? `${row.rate}` : '—';
       const entityAmtText =
@@ -1306,18 +1316,6 @@ export function buildStandaloneReportHtml(
           : row.rate !== undefined
           ? 'Pending'
           : '—';
-      const amtVarText =
-        row.amountVariance !== null
-          ? formatVariance(row.amountVariance, 2)
-          : '—';
-      const amtVarColor =
-        row.amountVariance === null
-          ? '#64748b'
-          : row.amountVariance < 0
-          ? '#dc2626'
-          : row.amountVariance > 0
-          ? '#2563eb'
-          : '#047857';
 
       return `
         <tr>
@@ -1336,9 +1334,9 @@ export function buildStandaloneReportHtml(
           <td class="num" style="background:#faf5ff;">${row.auditDims.thickness ?? '—'}</td>
           <td class="num" style="font-weight:800;color:#3730a3;background:#eef2ff;">${row.auditQty !== null ? `${row.auditQty}` : 'Pending'} <span class="muted">${escapeHtml(unit)}</span></td>
           <td class="num mono" style="font-weight:700;color:#3730a3;background:#ede9fe;">${escapeHtml(auditAmtText)}</td>
-          <td class="num" style="color:${varColor};font-weight:800;">${escapeHtml(varText)}</td>
-          <td class="num mono" style="color:${amtVarColor};font-weight:800;">${escapeHtml(amtVarText)}</td>
-          <td>${escapeHtml(entityStatusLabel(row.status))}</td>
+          <td class="num" style="color:${diffInfo.hexColor};font-weight:800;">${escapeHtml(varText)}</td>
+          <td class="num mono" style="color:${diffInfo.hexColor};font-weight:800;">${escapeHtml(diffInfo.costText)}</td>
+          <td style="color:${diffInfo.hexColor};font-weight:700;">${escapeHtml(diffInfo.badgeLabel)}</td>
         </tr>
       `;
     })
@@ -1451,13 +1449,21 @@ export function buildStandaloneReportHtml(
                 ${hasAnyRates ? `
                   <tr class="totals-row">
                     <td class="center">&Sigma;</td>
-                    <td colspan="6">TOTAL FINANCIAL VALUE &amp; AUDIT RECOVERY</td>
+                    <td colspan="6">TOTAL FINANCIAL OUTCOME (EXCESS / UNDERPAYMENT)</td>
                     <td class="num mono" style="font-weight:800;">${totalEntityAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td colspan="5"></td>
                     <td class="num mono" style="font-weight:800;color:#3730a3;">${totalAuditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td></td>
-                    <td class="num mono" style="font-weight:800;color:${(totalAmountVariance ?? 0) < 0 ? '#dc2626' : (totalAmountVariance ?? 0) > 0 ? '#2563eb' : '#047857'};">${totalAmountVariance !== null ? formatVariance(totalAmountVariance, 2) : '—'}</td>
-                    <td></td>
+                    <td class="num mono" style="font-weight:800;color:${netOutcome === 'excess' ? '#dc2626' : netOutcome === 'underpayment' ? '#2563eb' : '#047857'};">${
+                      netOutcome === 'excess'
+                        ? `${netDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Excess`
+                        : netOutcome === 'underpayment'
+                        ? `${netDiff.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Underpayment`
+                        : '0.00 Matched'
+                    }</td>
+                    <td style="font-weight:800;color:${netOutcome === 'excess' ? '#dc2626' : netOutcome === 'underpayment' ? '#2563eb' : '#047857'};">${
+                      netOutcome === 'excess' ? 'Excess' : netOutcome === 'underpayment' ? 'Underpayment' : 'Matched'
+                    }</td>
                   </tr>
                 ` : ''}
               </tbody>
@@ -1715,14 +1721,18 @@ export function exportProjectToExcel(
       const vp = a.verifiedPostCount ?? m.totalPosts;
       csvAuditRows.push(`Fence Posts Total,${m.totalPosts},${vp},${cleanVariance(vp, m.totalPosts, 0)},${csvCell(m.postUnit)}`);
     }
-    if (items.chainLinkMesh.enabled && (m.meshLen > 0 || (a.verifiedMeshLength ?? 0) > 0)) {
-      const vm = a.verifiedMeshLength ?? m.meshLen;
-      csvAuditRows.push(`Chain-Link Mesh,${m.meshLen},${vm},${cleanVariance(vm, m.meshLen, 2)},${csvCell(items.chainLinkMesh.unit)}`);
+    const meshUnitIsArea = isAreaUnit(items.chainLinkMesh.unit);
+    const loggedMesh = roundTo(meshUnitIsArea ? m.meshArea : m.meshLen, 2);
+    if (items.chainLinkMesh.enabled && (loggedMesh > 0 || (a.verifiedMeshLength ?? 0) > 0)) {
+      const vm = a.verifiedMeshLength ?? loggedMesh;
+      csvAuditRows.push(`Chain-Link Mesh,${loggedMesh},${vm},${cleanVariance(vm, loggedMesh, 2)},${csvCell(items.chainLinkMesh.unit)}`);
     }
-    if (items.rrmWall.enabled && (m.rrmVol > 0 || (a.verifiedRrmVolume ?? 0) > 0)) {
-      const vr = a.verifiedRrmVolume ?? roundTo(m.rrmVol, 2);
-      const diff = cleanVariance(vr, roundTo(m.rrmVol, 2), 2);
-      csvAuditRows.push(`RMM Wall,${m.rrmVol.toFixed(2)},${vr.toFixed(2)},${diff.toFixed(2)},${csvCell(items.rrmWall.unit)}`);
+    const rrmUnitIsLength = isLengthUnit(items.rrmWall.unit);
+    const loggedRrm = roundTo(rrmUnitIsLength ? m.rrmLen : m.rrmVol, 2);
+    if (items.rrmWall.enabled && (loggedRrm > 0 || (a.verifiedRrmVolume ?? 0) > 0)) {
+      const vr = a.verifiedRrmVolume ?? loggedRrm;
+      const diff = cleanVariance(vr, loggedRrm, 2);
+      csvAuditRows.push(`RMM Wall,${loggedRrm.toFixed(2)},${vr.toFixed(2)},${diff.toFixed(2)},${csvCell(items.rrmWall.unit)}`);
     }
     if (items.roadMeasurement.enabled && (m.roadLen > 0 || (a.verifiedRoadLength ?? 0) > 0)) {
       const vrd = a.verifiedRoadLength ?? m.roadLen;
@@ -1757,7 +1767,12 @@ export function exportProjectToExcel(
       row.item.length !== undefined ||
       row.item.width !== undefined ||
       row.item.thickness !== undefined ||
+      row.item.auditNos !== undefined ||
+      row.item.auditLength !== undefined ||
+      row.item.auditWidth !== undefined ||
+      row.item.auditThickness !== undefined ||
       row.item.verifiedOverride !== undefined ||
+      (row.item.rate !== undefined && row.item.rate > 0) ||
       row.entityQty > 0
   );
   if (entityComparisons.length > 0) {
@@ -1767,20 +1782,13 @@ export function exportProjectToExcel(
       rows.push(`Executing Entity,${csvCell(project.entityName)}`);
     }
     rows.push(
-      `#,Work Item,Linked Audit Target,Rate / Unit,Entity Nos,Entity Length,Entity Width,Entity Thickness,Entity Dimensions,Entity Qty,Entity Claimed Amount,Audit Nos,Audit Length,Audit Width,Audit Thickness,Audit Dimensions,Audit Verified Qty,Audit Verified Amount,Quantity Variance (Audit - Entity),Variance %,Cost Variance (Audit - Entity),Status,Unit,Remarks`
+      `#,Work Item,Linked Audit Target,Rate / Unit,Entity Nos,Entity Length,Entity Width,Entity Thickness,Entity Dimensions,Entity Qty,Entity Claimed Amount,Audit Nos,Audit Length,Audit Width,Audit Thickness,Audit Dimensions,Audit Verified Qty,Audit Verified Amount,Quantity Variance (Audit - Entity),Variance %,Cost Variance (Audit - Entity),Status (Excess / Underpayment),Unit,Remarks`
     );
     entityComparisons.forEach((r, i) => {
       const unit = r.auditUnit || r.item.unit;
-      const statusText =
-        r.status === 'matched'
-          ? 'Matched'
-          : r.status === 'shortfall'
-          ? 'Shortfall (Overclaimed)'
-          : r.status === 'excess'
-          ? 'Excess Verified'
-          : 'Pending Audit';
+      const diffInfo = formatDiffLabel(r.status, r.variance, unit, r.amountVariance);
       rows.push(
-        `${i + 1},${csvCell(r.item.itemName || r.auditLabel)},${csvCell(r.auditLabel)},${r.rate ?? ''},${r.item.nos ?? ''},${r.item.length ?? ''},${r.item.width ?? ''},${r.item.thickness ?? ''},${csvCell(formatEntityDimensionsLabel(r.item))},${r.entityQty},${r.entityAmount ?? ''},${r.auditDims.nos ?? ''},${r.auditDims.length ?? ''},${r.auditDims.width ?? ''},${r.auditDims.thickness ?? ''},${csvCell(formatAuditDimensionsLabel(r.item, r.auditDims))},${r.auditQty ?? ''},${r.auditAmount ?? ''},${r.variance ?? ''},${r.variancePct !== null ? `${r.variancePct}%` : ''},${r.amountVariance ?? ''},${csvCell(statusText)},${csvCell(unit)},${csvCell(r.item.remarks || '')}`
+        `${i + 1},${csvCell(r.item.itemName || r.auditLabel)},${csvCell(r.auditLabel)},${r.rate ?? ''},${r.item.nos ?? ''},${r.item.length ?? ''},${r.item.width ?? ''},${r.item.thickness ?? ''},${csvCell(formatEntityDimensionsLabel(r.item))},${r.entityQty},${r.entityAmount ?? ''},${r.auditDims.nos ?? ''},${r.auditDims.length ?? ''},${r.auditDims.width ?? ''},${r.auditDims.thickness ?? ''},${csvCell(formatAuditDimensionsLabel(r.item, r.auditDims))},${r.auditQty ?? ''},${r.auditAmount ?? ''},${r.variance ?? ''},${r.variancePct !== null ? `${r.variancePct}%` : ''},${r.amountVariance ?? ''},${csvCell(diffInfo.badgeLabel)},${csvCell(unit)},${csvCell(r.item.remarks || '')}`
       );
     });
 
@@ -1794,9 +1802,17 @@ export function exportProjectToExcel(
         entityComparisons.reduce((sum, r) => sum + (r.auditAmount ?? 0), 0),
         2
       );
-      const totalAmountVariance = cleanVariance(totalAuditAmount, totalEntityAmount, 2);
+      let netCsvStatus = 'Matched';
+      let netCsvDiff = 0;
+      if (totalEntityAmount > totalAuditAmount) {
+        netCsvStatus = 'Excess';
+        netCsvDiff = roundTo(totalEntityAmount - totalAuditAmount, 2);
+      } else if (totalAuditAmount > totalEntityAmount) {
+        netCsvStatus = 'Underpayment';
+        netCsvDiff = roundTo(totalAuditAmount - totalEntityAmount, 2);
+      }
       rows.push(
-        `TOTALS,FINANCIAL RECONCILIATION,,,Claimed Total Value,,,,,,${totalEntityAmount},,,,Verified Total Value,,${totalAuditAmount},,Net Cost Variance,${totalAmountVariance},,,`
+        `TOTALS,FINANCIAL OUTCOME,,,Claimed Total Value,,,,,,${totalEntityAmount},,,,Verified Total Value,,${totalAuditAmount},,Net Difference,${netCsvDiff},${csvCell(netCsvStatus)},,`
       );
     }
   }

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { ConstructionProject } from '../types';
-import { DEFAULT_PROJECT_SETTINGS } from '../utils/geo';
+import { createDefaultProjectSettings } from '../utils/geo';
 import {
   downloadLocalDeviceBackup,
   formatStorageBytes,
@@ -56,18 +56,15 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
       fenceMeshSegments: [],
       rrmWalls: [],
       roadSections: [],
-      settings: DEFAULT_PROJECT_SETTINGS,
+      inputLocations: [],
+      entityMeasurements: [],
+      settings: createDefaultProjectSettings(),
       auditNotes: '',
       auditInfo: {
         auditorName: '',
         auditDate: new Date().toISOString().split('T')[0],
         auditStatus: 'pending',
         generalRemarks: '',
-        verifiedPostCount: 0,
-        verifiedMeshLength: 0,
-        verifiedRrmVolume: 0,
-        verifiedRoadLength: 0,
-        verifiedSideDrainLength: 0,
         verifiedCustomItems: {},
       },
     };
@@ -204,11 +201,16 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
           )}
 
           {/* Saved Sites List */}
+          {(() => {
+            const uniqueProjects = Array.from(
+              new Map(savedProjects.map((proj) => [proj.id, proj])).values()
+            );
+            return (
           <div className="space-y-3">
-            <h4 className="text-xs font-bold text-slate-700">All Saved Sites ({savedProjects.length})</h4>
+            <h4 className="text-xs font-bold text-slate-700">All Saved Sites ({uniqueProjects.length})</h4>
             
             <div className="space-y-2.5">
-              {savedProjects.map((proj) => {
+              {uniqueProjects.map((proj) => {
                 const isCurrent = proj.id === currentProject.id;
                 const postCount = proj.fencePosts.length;
                 const roadCount = proj.roadSections.length;
@@ -248,7 +250,7 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {savedProjects.length > 1 && !isCurrent && (
+                      {uniqueProjects.length > 1 && !isCurrent && (
                         isConfirmingDelete ? (
                           <div className="flex items-center space-x-1.5 flex-1 sm:flex-none">
                             <button
@@ -287,6 +289,8 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
               })}
             </div>
           </div>
+            );
+          })()}
 
           {/* Local Device Storage & File Backup */}
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">

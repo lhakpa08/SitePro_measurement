@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ConstructionProject, GpsCoordinate } from './types';
 import { INITIAL_DEMO_PROJECT } from './utils/geo';
 import {
+  AppTab,
+  deduplicateProjectsById,
   getLatestProjectTimestamp,
   loadActiveProjectIdSync,
   loadActiveTabSync,
@@ -14,6 +16,7 @@ import {
   saveActiveProjectId,
   saveActiveTab,
 } from './utils/deviceStorage';
+import { computeEntityAuditComparisons } from './utils/calculations';
 import { exportProjectToExcel } from './utils/export';
 import { StaticMapScope } from './utils/staticMap';
 import { Navbar } from './components/Navbar';
@@ -21,9 +24,10 @@ import { DashboardOverview } from './components/DashboardOverview';
 import { ProjectSettingsModal } from './components/ProjectSettingsModal';
 import { SiteManagerModal } from './components/SiteManagerModal';
 import { SimpleAuditDashboard } from './components/SimpleAuditDashboard';
+import { EntityComparisonModule } from './components/EntityComparisonModule';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { ExportReportModal } from './components/ExportReportModal';
-import { CheckCircle2, AlertTriangle, X } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, X, Download, FileSpreadsheet } from 'lucide-react';
 
 export default function App() {
   const initialLoadRef = useRef<{ projects: ConstructionProject[]; fromStorage: boolean } | null>(null);
@@ -39,9 +43,14 @@ export default function App() {
     () => loadActiveProjectIdSync(initialLoadRef.current!.projects)
   );
 
-  const project = savedProjects.find(p => p.id === activeProjectId) || savedProjects[0] || INITIAL_DEMO_PROJECT;
+  const uniqueSavedProjects = useMemo(
+    () => deduplicateProjectsById(savedProjects),
+    [savedProjects]
+  );
 
-  const [activeTab, setActiveTab] = useState<'audit' | 'overview'>(() => loadActiveTabSync());
+  const project = uniqueSavedProjects.find(p => p.id === activeProjectId) || uniqueSavedProjects[0] || INITIAL_DEMO_PROJECT;
+
+  const [activeTab, setActiveTab] = useState<AppTab>(() => loadActiveTabSync());
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isSiteManagerOpen, setIsSiteManagerOpen] = useState<boolean>(false);
   const [isDriveOpen, setIsDriveOpen] = useState<boolean>(false);
@@ -58,7 +67,12 @@ export default function App() {
     message: '',
   });
   const prevSavedProjectsRef = useRef<ConstructionProject[]>(savedProjects);
+  const latestProjectsRef = useRef<ConstructionProject[]>(savedProjects);
+  latestProjectsRef.current = savedProjects;
+  const userEditedBeforeHydrationRef = useRef<boolean>(false);
   const toastTimerRef = useRef<number | null>(null);
+  const idbDebounceRef = useRef<number | null>(null);
+  const idbPendingRef = useRef<boolean>(false);
 
   // GPS state
   const [gpsStatus, setGpsStatus] = useState<'idle' | 'locating' | 'success' | 'error'>('idle');
@@ -73,7 +87,7 @@ export default function App() {
     return () => window.removeEventListener('gmp-quota-exceeded', handleQuota);
   }, []);
 
-  const showSaveToast = (type: 'success' | 'error', message: string) => {
+  const showSaveToast = useCallback((type: 'success' | 'error', message: string) => {
     if (toastTimerRef.current !== null) {
       window.clearTimeout(toastTimerRef.current);
     }
@@ -82,7 +96,7 @@ export default function App() {
       setSaveToast(prev => ({ ...prev, visible: false }));
       toastTimerRef.current = null;
     }, 2200);
-  };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -99,18 +113,31 @@ export default function App() {
 
     void (async () => {
       const idbProjects = await readProjectsFromIndexedDB();
-      if (cancelled || !idbProjects || idbProjects.length === 0) return;
+      if (cancelled) return;
 
       const hadLocal = initialLoadRef.current?.fromStorage ?? false;
       const localLatest = getLatestProjectTimestamp(initialLoadRef.current?.projects ?? []);
-      const idbLatest = getLatestProjectTimestamp(idbProjects);
+      const idbLatest = idbProjects ? getLatestProjectTimestamp(idbProjects) : 0;
 
-      if (!hadLocal || idbLatest > localLatest) {
+      if (
+        !userEditedBeforeHydrationRef.current &&
+        idbProjects &&
+        idbProjects.length > 0 &&
+        (!hadLocal || idbLatest > localLatest)
+      ) {
         prevSavedProjectsRef.current = idbProjects;
+        latestProjectsRef.current = idbProjects;
+        persistProjectsToLocalStorageSync(idbProjects, true);
         setSavedProjects(idbProjects);
         setActiveProjectId((currId) =>
           idbProjects.some((p) => p.id === currId) ? currId : idbProjects[0].id
         );
+      } else if (hadLocal && (!idbProjects || localLatest > idbLatest)) {
+        // Ensure existing localStorage projects are mirrored into IndexedDB
+        void persistProjectsToDevice(latestProjectsRef.current, {
+          skipLocalStorage: true,
+          alreadyClean: true,
+        });
       }
     })();
 
@@ -135,8 +162,12 @@ export default function App() {
         try {
           const parsed = JSON.parse(e.newValue);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            prevSavedProjectsRef.current = parsed;
-            setSavedProjects(parsed);
+            const unique = deduplicateProjectsById(parsed);
+            if (unique.length > 0) {
+              prevSavedProjectsRef.current = unique;
+              latestProjectsRef.current = unique;
+              setSavedProjects(unique);
+            }
           }
         } catch {
           // Ignore malformed storage event
@@ -147,46 +178,88 @@ export default function App() {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  // Save projects to local device (localStorage + IndexedDB) on change
+  // Save projects synchronously to localStorage on commit, and debounce IndexedDB + toast
   useEffect(() => {
     const hasChanged = prevSavedProjectsRef.current !== savedProjects;
     prevSavedProjectsRef.current = savedProjects;
+    if (!hasChanged) return;
+
+    userEditedBeforeHydrationRef.current = true;
+    const localSyncOk = persistProjectsToLocalStorageSync(savedProjects, true);
     let active = true;
 
-    void persistProjectsToDevice(savedProjects).then(({ ok, usedIndexedDbOnly }) => {
-      if (!active || !hasChanged) return;
-      if (ok) {
-        showSaveToast(
-          'success',
-          usedIndexedDbOnly
-            ? 'Saved to local device (IndexedDB)'
-            : 'Saved to local device'
-        );
-      } else {
-        showSaveToast('error', 'Could not save to local device storage');
-      }
-    });
+    if (idbDebounceRef.current !== null) {
+      window.clearTimeout(idbDebounceRef.current);
+    }
+    idbPendingRef.current = true;
+
+    idbDebounceRef.current = window.setTimeout(() => {
+      idbDebounceRef.current = null;
+      idbPendingRef.current = false;
+      void persistProjectsToDevice(latestProjectsRef.current, {
+        skipLocalStorage: true,
+        alreadyClean: true,
+      }).then((idbRes) => {
+        if (!active) return;
+        const ok = localSyncOk || idbRes.ok;
+        const usedIndexedDbOnly = !localSyncOk && idbRes.ok;
+        if (ok) {
+          showSaveToast(
+            'success',
+            usedIndexedDbOnly
+              ? 'Saved to local device (IndexedDB)'
+              : 'Saved to local device'
+          );
+        } else {
+          showSaveToast('error', 'Could not save to local device storage');
+        }
+      });
+    }, 350);
 
     return () => {
       active = false;
     };
-  }, [savedProjects]);
+  }, [savedProjects, showSaveToast]);
 
   useEffect(() => {
-    const flushToLocal = () => {
-      persistProjectsToLocalStorageSync(prevSavedProjectsRef.current);
+    const flushPendingPersist = () => {
+      persistProjectsToLocalStorageSync(latestProjectsRef.current, true);
+      if (idbDebounceRef.current !== null) {
+        window.clearTimeout(idbDebounceRef.current);
+        idbDebounceRef.current = null;
+      }
+      if (idbPendingRef.current) {
+        idbPendingRef.current = false;
+        void persistProjectsToDevice(latestProjectsRef.current, {
+          skipLocalStorage: true,
+          alreadyClean: true,
+        });
+      }
     };
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        flushToLocal();
+        flushPendingPersist();
       }
     };
-    window.addEventListener('pagehide', flushToLocal);
+    window.addEventListener('beforeunload', flushPendingPersist);
+    window.addEventListener('pagehide', flushPendingPersist);
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
-      window.removeEventListener('pagehide', flushToLocal);
+      window.removeEventListener('beforeunload', flushPendingPersist);
+      window.removeEventListener('pagehide', flushPendingPersist);
       document.removeEventListener('visibilitychange', handleVisibility);
+      flushPendingPersist();
     };
+  }, []);
+
+  const updateGpsState = useCallback((lat: number, lng: number, accuracy?: number) => {
+    setCurrentGps(prev => {
+      if (prev && prev.lat === lat && prev.lng === lng && prev.accuracy === accuracy) {
+        return prev;
+      }
+      return { lat, lng, accuracy };
+    });
+    setGpsStatus(prev => (prev === 'success' ? prev : 'success'));
   }, []);
 
   // Request GPS position
@@ -195,13 +268,12 @@ export default function App() {
     setGpsStatus('locating');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setCurrentGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
-        setGpsStatus('success');
+        updateGpsState(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
       },
       () => setGpsStatus('error'),
       { enableHighAccuracy: true, timeout: 10000 }
     );
-  }, []);
+  }, [updateGpsState]);
 
   const handleCaptureFreshGps = useCallback((): Promise<GpsCoordinate | undefined> => {
     return new Promise((resolve) => {
@@ -217,8 +289,7 @@ export default function App() {
             accuracy: pos.coords.accuracy,
             timestamp: Date.now(),
           };
-          setCurrentGps({ lat: coord.lat, lng: coord.lng, accuracy: coord.accuracy });
-          setGpsStatus('success');
+          updateGpsState(coord.lat, coord.lng, coord.accuracy);
           resolve(coord);
         },
         () => {
@@ -227,15 +298,14 @@ export default function App() {
         { enableHighAccuracy: true, timeout: 6000, maximumAge: 4000 }
       );
     });
-  }, []);
+  }, [updateGpsState]);
 
   useEffect(() => {
     handleRequestGps();
     if (!navigator.geolocation) return;
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
-        setCurrentGps({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
-        setGpsStatus('success');
+        updateGpsState(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
       },
       () => {},
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
@@ -243,38 +313,49 @@ export default function App() {
     return () => {
       navigator.geolocation.clearWatch(watchId);
     };
-  }, [handleRequestGps]);
+  }, [handleRequestGps, updateGpsState]);
 
   const handleUpdateProject = useCallback((updated: ConstructionProject) => {
+    userEditedBeforeHydrationRef.current = true;
     setSavedProjects(prev => {
-      const next = prev.map(p => p.id === updated.id ? updated : p);
-      persistProjectsToLocalStorageSync(next);
+      const next = deduplicateProjectsById(prev.map(p => p.id === updated.id ? updated : p));
+      latestProjectsRef.current = next;
       return next;
     });
   }, []);
 
   const handlePatchProject = useCallback(
     (projectId: string, updater: (latest: ConstructionProject) => ConstructionProject) => {
+      userEditedBeforeHydrationRef.current = true;
       setSavedProjects(prev => {
-        const next = prev.map(p => p.id === projectId ? updater(p) : p);
-        persistProjectsToLocalStorageSync(next);
+        const next = deduplicateProjectsById(prev.map(p => p.id === projectId ? updater(p) : p));
+        latestProjectsRef.current = next;
         return next;
       });
     },
     []
   );
 
+  const handleSwitchProject = useCallback((targetId: string) => {
+    saveActiveProjectId(targetId);
+    setIsSettingsOpen(false);
+    setExportReportState({ isOpen: false, scope: 'all' });
+    setActiveProjectId(targetId);
+  }, []);
+
   const handleRestoreFromDrive = (incoming: ConstructionProject[], mode: 'merge' | 'replace') => {
-    if (incoming.length === 0) return;
+    const uniqueIncoming = deduplicateProjectsById(incoming);
+    if (uniqueIncoming.length === 0) return;
+    userEditedBeforeHydrationRef.current = true;
     if (mode === 'replace') {
-      persistProjectsToLocalStorageSync(incoming);
-      setSavedProjects(incoming);
-      setActiveProjectId(incoming[0].id);
+      latestProjectsRef.current = uniqueIncoming;
+      setSavedProjects(uniqueIncoming);
+      handleSwitchProject(uniqueIncoming[0].id);
       return;
     }
     setSavedProjects((prev) => {
-      const merged = [...prev];
-      incoming.forEach((item) => {
+      const merged = deduplicateProjectsById(prev);
+      uniqueIncoming.forEach((item) => {
         const idx = merged.findIndex((p) => p.id === item.id);
         if (idx >= 0) {
           merged[idx] = item;
@@ -282,15 +363,30 @@ export default function App() {
           merged.push(item);
         }
       });
-      persistProjectsToLocalStorageSync(merged);
+      latestProjectsRef.current = merged;
       return merged;
     });
   };
 
+  const entityTabSummary = useMemo(() => {
+    if (activeTab !== 'entity') {
+      return { total: 0, matched: 0, excess: 0, underpayment: 0 };
+    }
+    const entityComparisons = computeEntityAuditComparisons(project, 'all');
+    return {
+      total: entityComparisons.length,
+      excess: entityComparisons.filter(
+        (r) => r.status === 'excess' || (r.status as string) === 'shortfall'
+      ).length,
+      underpayment: entityComparisons.filter((r) => r.status === 'underpayment').length,
+      matched: entityComparisons.filter((r) => r.status === 'matched').length,
+    };
+  }, [activeTab, project]);
+
   return (
-    <div className="min-h-screen bg-[#F4F5F7] pt-2.5 sm:pt-3 pb-24 md:pb-10 text-slate-900 font-sans selection:bg-amber-500 selection:text-slate-950">
+    <div className="min-h-screen bg-[#F8FAFC] pb-24 md:pb-12 text-slate-900 font-sans selection:bg-amber-400 selection:text-slate-950">
       {gmpQuotaExceeded && (
-        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm mb-2">
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50">
           <span>
             Google Maps Platform quota reached. If you are the app owner, visit{' '}
             <a
@@ -322,14 +418,15 @@ export default function App() {
       />
 
       {/* Main Content Container */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6">
         {activeTab === 'audit' && (
           <SimpleAuditDashboard
+            key={`audit-${project.id}`}
             project={project}
             onUpdateProject={handleUpdateProject}
             onPatchProject={handlePatchProject}
-            savedProjects={savedProjects}
-            onSwitchProject={(p) => setActiveProjectId(p.id)}
+            savedProjects={uniqueSavedProjects}
+            onSwitchProject={(p) => handleSwitchProject(p.id)}
             onOpenSiteManager={() => setIsSiteManagerOpen(true)}
             onOpenSettings={() => setIsSettingsOpen(true)}
             onOpenReport={(scope = 'all') => setExportReportState({ isOpen: true, scope })}
@@ -340,6 +437,7 @@ export default function App() {
 
         {activeTab === 'overview' && (
           <DashboardOverview
+            key={`overview-${project.id}`}
             project={project}
             setActiveTab={setActiveTab}
             onUpdateProject={handleUpdateProject}
@@ -349,10 +447,59 @@ export default function App() {
             currentGps={currentGps}
           />
         )}
+
+        {activeTab === 'entity' && (
+            <div className="space-y-5 pb-4">
+              <div className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 mb-5 border-b border-slate-100">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-slate-500 mb-1">
+                      {project.name} &middot; Measurement Reconciliation
+                    </div>
+                    <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                      Entity Measurements vs. Audit Verification
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-1 tabular-nums">
+                      {entityTabSummary.total === 0
+                        ? 'Compare entity-claimed Nos, Length, Width & Thickness against audit verification'
+                        : `${entityTabSummary.total} item${entityTabSummary.total === 1 ? '' : 's'} · ${entityTabSummary.matched} matched · ${entityTabSummary.excess} excess${entityTabSummary.underpayment > 0 ? ` · ${entityTabSummary.underpayment} underpayment` : ''}`}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => exportProjectToExcel(project)}
+                      className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Excel</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExportReportState({ isOpen: true, scope: 'all' })}
+                      className="min-h-[40px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export PDF</span>
+                    </button>
+                  </div>
+                </div>
+
+                <EntityComparisonModule
+                  key={`entity-${project.id}`}
+                  project={project}
+                  onUpdateProject={handleUpdateProject}
+                  onPatchProject={handlePatchProject}
+                />
+              </div>
+            </div>
+        )}
       </main>
 
       {/* Settings Modal */}
       <ProjectSettingsModal
+        key={`settings-${project.id}`}
         project={project}
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -364,21 +511,33 @@ export default function App() {
         isOpen={isSiteManagerOpen}
         onClose={() => setIsSiteManagerOpen(false)}
         currentProject={project}
-        savedProjects={savedProjects}
+        savedProjects={uniqueSavedProjects}
         onSwitchProject={(p) => {
-          setActiveProjectId(p.id);
+          handleSwitchProject(p.id);
           setIsSiteManagerOpen(false);
         }}
         onCreateProject={(newProj) => {
-          setSavedProjects(prev => [newProj, ...prev]);
-          setActiveProjectId(newProj.id);
+          userEditedBeforeHydrationRef.current = true;
+          setSavedProjects(prev => {
+            const next = deduplicateProjectsById([newProj, ...prev]);
+            latestProjectsRef.current = next;
+            return next;
+          });
+          handleSwitchProject(newProj.id);
           setIsSiteManagerOpen(false);
         }}
         onDeleteProject={(id) => {
-          const remaining = savedProjects.filter(p => p.id !== id);
-          if (remaining.length > 0) {
-            setSavedProjects(remaining);
-            if (activeProjectId === id) setActiveProjectId(remaining[0].id);
+          userEditedBeforeHydrationRef.current = true;
+          const remainingNow = latestProjectsRef.current.filter(p => p.id !== id);
+          if (remainingNow.length === 0) return;
+          setSavedProjects(prev => {
+            const remaining = prev.filter(p => p.id !== id);
+            if (remaining.length === 0) return prev;
+            latestProjectsRef.current = remaining;
+            return remaining;
+          });
+          if (activeProjectId === id) {
+            handleSwitchProject(remainingNow[0].id);
           }
         }}
         onRestoreProjects={handleRestoreFromDrive}
@@ -389,13 +548,14 @@ export default function App() {
         isOpen={isDriveOpen}
         onClose={() => setIsDriveOpen(false)}
         currentProject={project}
-        savedProjects={savedProjects}
+        savedProjects={uniqueSavedProjects}
         onRestoreProjects={handleRestoreFromDrive}
         onDriveAuthChange={(_user, connected) => setIsDriveConnected(connected)}
       />
 
       {/* Exported Report & Real-Time Map Preview Modal */}
       <ExportReportModal
+        key={`export-${project.id}`}
         isOpen={exportReportState.isOpen}
         onClose={() => setExportReportState(prev => ({ ...prev, isOpen: false }))}
         project={project}

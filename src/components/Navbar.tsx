@@ -1,22 +1,21 @@
 import React from 'react';
 import { ConstructionProject } from '../types';
-import { 
-  Settings, 
+import {
+  Settings,
   Compass,
-  FileSpreadsheet,
   ShieldCheck,
   Building2,
   MapPin,
   LayoutDashboard,
+  Scale,
   Cloud,
-  Wifi,
-  WifiOff
 } from 'lucide-react';
+import { AppTab } from '../utils/deviceStorage';
 
 interface NavbarProps {
   project: ConstructionProject;
-  activeTab: 'audit' | 'overview';
-  setActiveTab: (tab: 'audit' | 'overview') => void;
+  activeTab: AppTab;
+  setActiveTab: (tab: AppTab) => void;
   onOpenSettings: () => void;
   onOpenNewProject: () => void;
   onOpenDrive: () => void;
@@ -35,49 +34,27 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenNewProject,
   onOpenDrive,
   isDriveConnected = false,
-  onExportCsv,
   gpsStatus,
   currentGps,
   onRequestGps,
 }) => {
-  const [isOnline, setIsOnline] = React.useState<boolean>(() => navigator.onLine);
-
-  React.useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
   return (
     <>
-      <header
-        className={`bg-slate-900 text-white shadow-sm md:sticky md:top-3 z-40 border border-slate-800 rounded-2xl mx-auto transition-all w-[calc(100%-1.5rem)] sm:w-[calc(100%-3rem)] lg:w-[calc(100%-4rem)] ${
-          activeTab === 'audit'
-            ? 'max-w-4xl'
-            : 'max-w-[calc(80rem-2rem)] sm:max-w-[calc(80rem-3rem)] lg:max-w-[calc(80rem-4rem)]'
-        }`}
-      >
-        <div className="w-full px-3.5 sm:px-6">
-          <div className="flex items-center justify-between gap-2.5 sm:gap-3 py-2.5 sm:py-3">
-            
+      <header className="bg-white border-b border-slate-200 md:sticky md:top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Top Bar Row */}
+          <div className="flex items-center justify-between gap-4 py-3">
             {/* Brand & Active Site */}
-            <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0 flex-1">
-              <div className="bg-amber-500 text-slate-950 p-2 rounded-xl flex items-center justify-center flex-shrink-0">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-9 h-9 rounded-lg bg-slate-900 text-amber-400 flex items-center justify-center shrink-0">
                 <Compass className="w-5 h-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 min-w-0">
-                  <h1 className="font-bold text-sm sm:text-base text-white tracking-tight truncate">
-                    {project.name}
-                  </h1>
-                </div>
-                <p className="text-[11px] sm:text-xs text-slate-400 truncate mt-0.5">
-                  <span>SitePro</span>
+                <h1 className="font-bold text-sm sm:text-base text-slate-900 tracking-tight truncate leading-tight">
+                  {project.name}
+                </h1>
+                <p className="text-xs text-slate-500 truncate mt-0.5">
+                  <span className="font-medium text-slate-700">SitePro</span>
                   <span aria-hidden="true"> &middot; </span>
                   <span>{project.clientName || 'General'}</span>
                   <span className="hidden sm:inline" aria-hidden="true"> &middot; </span>
@@ -86,20 +63,20 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             </div>
 
-            {/* Utility Actions */}
-            <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+            {/* Clean Workspace Utility Controls */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 type="button"
                 onClick={onRequestGps}
-                className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] md:min-w-0 px-2.5 md:px-3 py-2 rounded-xl text-xs font-medium transition whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+                className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium border transition whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 ${
                   gpsStatus === 'success'
-                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/70'
+                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
                 }`}
                 title="Refresh GPS Location"
                 aria-label="Refresh GPS Location"
               >
-                <MapPin className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                <MapPin className={`w-4 h-4 sm:w-3.5 sm:h-3.5 ${gpsStatus === 'success' ? 'text-emerald-600' : 'text-slate-500'}`} />
                 <span className="hidden md:inline tabular-nums">
                   {gpsStatus === 'success' && currentGps
                     ? `${currentGps.lat.toFixed(2)}, ${currentGps.lng.toFixed(2)}`
@@ -109,76 +86,54 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </button>
 
-              <div
-                className={`hidden lg:inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium border ${
-                  isOnline
-                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-                    : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
-                }`}
-                title={isOnline ? 'Online & Local Storage Synced' : 'Offline Mode (Local Storage Active)'}
-              >
-                {isOnline ? <Wifi className="w-3.5 h-3.5 text-emerald-400" /> : <WifiOff className="w-3.5 h-3.5 text-amber-400" />}
-                <span className="text-[11px] font-semibold">{isOnline ? 'Synced' : 'Offline'}</span>
-              </div>
-
-              <button
-                type="button"
-                onClick={onExportCsv}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
-                title="Export Excel Report"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Export</span>
-              </button>
-
               <button
                 type="button"
                 onClick={onOpenDrive}
-                className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-0 px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold border transition whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+                className={`inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium border transition whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 ${
                   isDriveConnected
-                    ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border-emerald-500/30'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-100 border-slate-700'
+                    ? 'bg-emerald-50 hover:bg-emerald-100/70 text-emerald-800 border-emerald-200'
+                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
                 }`}
                 title="Save or Restore with Google Drive"
                 aria-label="Google Drive Backup"
               >
-                <Cloud className={`w-4 h-4 ${isDriveConnected ? 'text-emerald-400' : 'text-sky-400'}`} />
+                <Cloud className={`w-4 h-4 sm:w-3.5 sm:h-3.5 ${isDriveConnected ? 'text-emerald-600' : 'text-slate-500'}`} />
                 <span className="hidden sm:inline">Drive</span>
               </button>
 
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-0 px-2.5 sm:px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-semibold border border-slate-700 transition whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                className="inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-0 px-2.5 sm:px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium border border-slate-200 transition whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
                 title="Settings: Units & Necessary Items"
                 aria-label="Settings"
               >
-                <Settings className="w-4 h-4 text-amber-400" />
+                <Settings className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-slate-500" />
                 <span className="hidden sm:inline">Settings</span>
               </button>
 
               <button
                 type="button"
                 onClick={onOpenNewProject}
-                className="inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] sm:min-h-[40px] sm:min-w-0 px-2.5 sm:px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-semibold border border-slate-700 transition whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                className="inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-0 px-2.5 sm:px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
                 title="Manage Sites"
                 aria-label="Manage Sites"
               >
-                <Building2 className="w-4 h-4" />
+                <Building2 className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-amber-400" />
                 <span className="hidden sm:inline">Sites</span>
               </button>
             </div>
           </div>
 
-          {/* Desktop/Tablet Navigation Tabs - Auditor & Overview */}
-          <nav aria-label="Primary navigation" className="hidden md:flex items-center gap-2 border-t border-slate-800/90 py-2.5">
+          {/* Desktop/Tablet Primary Navigation Tabs */}
+          <nav aria-label="Primary navigation" className="hidden md:flex items-center gap-6 border-t border-slate-100">
             <button
               type="button"
               onClick={() => setActiveTab('audit')}
-              className={`px-4 py-2 min-h-[40px] rounded-xl text-xs font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+              className={`py-2.5 px-1 border-b-2 text-xs font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 ${
                 activeTab === 'audit'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
               }`}
             >
               <ShieldCheck className="w-4 h-4" />
@@ -188,49 +143,77 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('overview')}
-              className={`px-4 py-2 min-h-[40px] rounded-xl text-xs font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+              className={`py-2.5 px-1 border-b-2 text-xs font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 ${
                 activeTab === 'overview'
-                  ? 'bg-amber-500 text-slate-950 shadow-sm'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
               }`}
             >
               <LayoutDashboard className="w-4 h-4" />
               <span>Overview</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('entity')}
+              className={`py-2.5 px-1 border-b-2 text-xs font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 ${
+                activeTab === 'entity'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 hover:border-slate-300'
+              }`}
+            >
+              <Scale className="w-4 h-4" />
+              <span>Entity Measurements</span>
+            </button>
           </nav>
         </div>
       </header>
 
-      {/* Mobile Fixed Bottom Thumb Navigation Bar (15% viewport height cap compliant: 64px) */}
+      {/* Mobile Fixed Bottom Thumb Navigation Bar */}
       <nav
         aria-label="Mobile navigation"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 pb-[env(safe-area-inset-bottom)]"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 pb-[env(safe-area-inset-bottom)]"
       >
-        <div className="grid grid-cols-2 h-16 px-2 gap-1.5 items-center">
+        <div className="grid grid-cols-3 h-16 px-2 gap-1 items-center">
           <button
             type="button"
             onClick={() => setActiveTab('audit')}
-            className={`min-h-[48px] h-12 rounded-xl flex flex-col items-center justify-center gap-0.5 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+            className={`min-h-[48px] h-12 rounded-lg flex flex-col items-center justify-center gap-1 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 ${
               activeTab === 'audit'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                ? 'bg-slate-900 text-white'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
-            <ShieldCheck className="w-5 h-5" />
+            <ShieldCheck className="w-4 h-4" />
             <span className="text-[11px] font-semibold tracking-tight leading-none">Auditor</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('overview')}
-            className={`min-h-[48px] h-12 rounded-xl flex flex-col items-center justify-center gap-0.5 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+            className={`min-h-[48px] h-12 rounded-lg flex flex-col items-center justify-center gap-1 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 ${
               activeTab === 'overview'
-                ? 'bg-amber-500 text-slate-950 shadow-sm'
-                : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                ? 'bg-slate-900 text-white'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
-            <LayoutDashboard className="w-5 h-5" />
+            <LayoutDashboard className="w-4 h-4" />
             <span className="text-[11px] font-semibold tracking-tight leading-none">Overview</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('entity')}
+            className={`min-h-[48px] h-12 rounded-lg flex flex-col items-center justify-center gap-1 px-1 transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 ${
+              activeTab === 'entity'
+                ? 'bg-slate-900 text-white'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <Scale className="w-4 h-4" />
+            <span className="text-[10.5px] sm:text-[11px] font-semibold tracking-tight leading-none truncate max-w-full">
+              Entity Meas.
+            </span>
           </button>
         </div>
       </nav>
