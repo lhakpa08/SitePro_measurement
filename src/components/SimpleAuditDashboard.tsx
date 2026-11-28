@@ -430,6 +430,13 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
         createdAt: baseTime,
       }));
       nextPosts = [...nextPosts, ...added];
+      const newTypeCount = nextPosts.filter(p => p.postType === postType).length;
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(String(newTypeCount));
+        utterance.rate = 1.1;
+        window.speechSynthesis.speak(utterance);
+      }
     } else if (nextPosts.length > 0) {
       let remainingToRemove = countToChange;
       const reversedKept: typeof nextPosts = [];
