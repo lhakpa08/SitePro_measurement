@@ -80,6 +80,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     setRrmWidthText(rrm?.topWidthEntries?.join(', ') ?? (rrm?.topWidthMeters !== undefined ? String(rrm.topWidthMeters) : ''));
     setRrmHeightText(rrm?.heightEntries?.join(', ') ?? (rrm?.heightMeters !== undefined ? String(rrm.heightMeters) : ''));
     setFullscreenCardId(null);
+    setCollapsedFields({ toolbar: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
@@ -180,9 +181,17 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     };
   }, [fullscreenCardId]);
 
-  const isFieldCollapsed = (id: string) => collapsedFields[id] === true;
+  // Keep all fields collapsed by default except 'toolbar' (Field Measurement Worksheet)
+  const isFieldCollapsed = (id: string) => {
+    if (id === 'toolbar') {
+      return collapsedFields.toolbar === true;
+    }
+    return collapsedFields[id] !== false;
+  };
+
   const toggleField = (id: string) => {
-    setCollapsedFields(prev => ({ ...prev, [id]: prev[id] !== true }));
+    const currentlyCollapsed = isFieldCollapsed(id);
+    setCollapsedFields(prev => ({ ...prev, [id]: !currentlyCollapsed }));
   };
 
   const toggleFullScreen = (id: string) => {
@@ -201,8 +210,9 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   const allCollapsed = allFieldIds.length > 0 && allFieldIds.every(id => isFieldCollapsed(id));
   const handleToggleAllFields = () => {
     const next: Record<string, boolean> = {};
+    const targetState = !allCollapsed;
     allFieldIds.forEach(id => {
-      next[id] = !allCollapsed;
+      next[id] = targetState;
     });
     setCollapsedFields(prev => ({ ...prev, ...next }));
   };
