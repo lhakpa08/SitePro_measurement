@@ -1803,7 +1803,7 @@ export function downloadStandaloneHtmlReport(
   URL.revokeObjectURL(url);
 }
 
-function printHtmlViaHiddenFrame(html: string) {
+export function printHtmlViaHiddenFrame(html: string) {
   const iframe = document.createElement('iframe');
   iframe.style.position = 'fixed';
   iframe.style.right = '0';

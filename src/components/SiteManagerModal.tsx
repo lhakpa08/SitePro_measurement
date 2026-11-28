@@ -103,11 +103,11 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-sm">
-      <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden border border-slate-200/90">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-sm">
+      <div className="bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92dvh] sm:max-h-[90vh] flex flex-col overflow-hidden border border-slate-300 dark:border-slate-700">
         
         {/* Header */}
-        <div className="bg-slate-900 text-white px-4 sm:px-6 pt-2.5 pb-4 sm:py-4 flex-shrink-0">
+        <div className="bg-slate-950 text-white px-4 sm:px-6 pt-2.5 pb-4 sm:py-4 flex-shrink-0 border-b border-slate-800">
           <div className="w-10 h-1 bg-slate-700 rounded-full mx-auto mb-3 sm:hidden" aria-hidden="true" />
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center space-x-3 min-w-0">
@@ -116,14 +116,14 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
               </div>
               <div className="min-w-0">
                 <h3 className="font-bold text-base sm:text-lg tracking-tight truncate">Site Projects &amp; Multi-Site Manager</h3>
-                <p className="text-xs text-slate-400 truncate">Switch between sites or add a new construction site</p>
+                <p className="text-xs text-slate-300 truncate">Switch between sites or add a new construction site</p>
               </div>
             </div>
             <button
               type="button"
               onClick={onClose}
               aria-label="Close site manager"
-              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition shrink-0"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition shrink-0"
             >
               <X className="w-5 h-5" />
             </button>
@@ -138,62 +138,62 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
             <button
               type="button"
               onClick={() => setIsCreating(true)}
-              className="w-full min-h-[46px] py-3 px-4 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold rounded-xl text-sm shadow-xs transition flex items-center justify-center space-x-2"
+              className="w-full min-h-[46px] py-3 px-4 bg-amber-400 hover:bg-amber-500 dark:hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-sm shadow-xs transition flex items-center justify-center space-x-2"
             >
               <Plus className="w-4 h-4" />
               <span>Add New Construction Site</span>
             </button>
           ) : (
-            <form onSubmit={handleCreate} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-4">
+            <form onSubmit={handleCreate} className="bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-2xl p-4 sm:p-5 space-y-4">
               <div className="flex items-center justify-between">
-                <h4 className="font-bold text-slate-900 text-sm">Create New Site</h4>
+                <h4 className="font-bold text-slate-950 dark:text-white text-sm">Create New Site</h4>
                 <button
                   type="button"
                   onClick={() => setIsCreating(false)}
-                  className="min-h-[36px] px-2 text-xs font-semibold text-slate-500 hover:text-slate-800"
+                  className="min-h-[36px] px-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
                 >
                   Cancel
                 </button>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Site / Project Name</label>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Site / Project Name</label>
                 <input
                   type="text"
                   placeholder="e.g. East Expressway Perimeter & Road"
                   value={newSiteName}
                   onChange={(e) => setNewSiteName(e.target.value)}
-                  className="w-full min-h-[44px] px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-base sm:text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none transition"
+                  className="w-full min-h-[44px] px-3.5 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-xl text-base sm:text-sm text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-400/25 outline-none transition"
                   required
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Client Name</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Client Name</label>
                   <input
                     type="text"
                     placeholder="e.g. Municipal Dept"
                     value={newClient}
                     onChange={(e) => setNewClient(e.target.value)}
-                    className="w-full min-h-[44px] px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-base sm:text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none transition"
+                    className="w-full min-h-[44px] px-3.5 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-xl text-base sm:text-sm text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-400/25 outline-none transition"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Location / Sector</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Location / Sector</label>
                   <input
                     type="text"
                     placeholder="e.g. Sector 7"
                     value={newLocation}
                     onChange={(e) => setNewLocation(e.target.value)}
-                    className="w-full min-h-[44px] px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-base sm:text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-200 outline-none transition"
+                    className="w-full min-h-[44px] px-3.5 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-xl text-base sm:text-sm text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-400/25 outline-none transition"
                   />
                 </div>
               </div>
 
               <button
                 type="submit"
-                className="w-full min-h-[44px] py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-sm shadow-xs transition"
+                className="w-full min-h-[44px] py-2.5 bg-slate-950 dark:bg-amber-400 hover:bg-slate-800 dark:hover:bg-amber-300 text-white dark:text-slate-950 font-bold rounded-xl text-sm shadow-xs transition"
               >
                 Create &amp; Switch to New Site
               </button>
@@ -207,7 +207,7 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
             );
             return (
           <div className="space-y-3">
-            <h4 className="text-xs font-bold text-slate-700">All Saved Sites ({uniqueProjects.length})</h4>
+            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">All Saved Sites ({uniqueProjects.length})</h4>
             
             <div className="space-y-2.5">
               {uniqueProjects.map((proj) => {
@@ -221,20 +221,20 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
                     key={proj.id}
                     className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition ${
                       isCurrent
-                        ? 'bg-amber-50/70 border-amber-400 shadow-xs'
-                        : 'bg-white border-slate-200 hover:border-slate-300'
+                        ? 'bg-amber-50/80 dark:bg-amber-950/35 border-amber-400 dark:border-amber-500 shadow-xs'
+                        : 'bg-white dark:bg-slate-800/70 border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500'
                     }`}
                   >
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center flex-wrap gap-2">
-                        <span className="font-bold text-slate-900 truncate">{proj.name}</span>
+                        <span className="font-bold text-slate-950 dark:text-white truncate">{proj.name}</span>
                         {isCurrent && (
-                          <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
                             &middot; Active
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 tabular-nums">
+                      <p className="text-xs text-slate-600 dark:text-slate-300 tabular-nums">
                         {proj.clientName} &middot; {proj.location} &middot; {postCount} Posts, {roadCount} Road Sections
                       </p>
                     </div>
@@ -244,7 +244,7 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
                         <button
                           type="button"
                           onClick={() => onSwitchProject(proj)}
-                          className="flex-1 sm:flex-none min-h-[44px] sm:min-h-[38px] px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center space-x-1.5"
+                          className="flex-1 sm:flex-none min-h-[44px] sm:min-h-[38px] px-3.5 py-1.5 bg-slate-950 dark:bg-amber-400 hover:bg-slate-800 dark:hover:bg-amber-300 text-white dark:text-slate-950 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5"
                         >
                           <span>Switch</span>
                           <ArrowRight className="w-3.5 h-3.5" />
@@ -266,7 +266,7 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
                             <button
                               type="button"
                               onClick={() => setPendingDeleteId(null)}
-                              className="min-h-[44px] sm:min-h-[38px] px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
+                              className="min-h-[44px] sm:min-h-[38px] px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white rounded-xl text-xs font-semibold transition"
                             >
                               Cancel
                             </button>
@@ -276,7 +276,7 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
                             type="button"
                             onClick={() => setPendingDeleteId(proj.id)}
                             aria-label={`Delete ${proj.name}`}
-                            className="min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                            className="min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] flex items-center justify-center text-slate-500 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 rounded-xl transition"
                             title="Delete site"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -293,15 +293,15 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
           })()}
 
           {/* Local Device Storage & File Backup */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+          <div className="bg-slate-50 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 rounded-2xl p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl shrink-0">
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-400 rounded-xl shrink-0">
                   <HardDrive className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
-                  <h4 className="text-xs font-bold text-slate-900">Local Device Storage</h4>
-                  <p className="text-[11px] text-slate-500 tabular-nums">
+                  <h4 className="text-xs font-bold text-slate-950 dark:text-white">Local Device Storage</h4>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums">
                     Auto-saved on this device (localStorage + IndexedDB) &middot; {formatStorageBytes(deviceBytes)}
                   </p>
                 </div>
@@ -312,22 +312,22 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
               <div
                 className={`p-3 rounded-xl border text-xs font-medium flex items-start gap-2 ${
                   deviceNotice.type === 'success'
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                    : 'bg-rose-50 border-rose-200 text-rose-900'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/70 border-emerald-300 dark:border-emerald-700 text-emerald-950 dark:text-emerald-200'
+                    : 'bg-rose-50 dark:bg-rose-950/70 border-rose-300 dark:border-rose-700 text-rose-950 dark:text-rose-200'
                 }`}
               >
                 {deviceNotice.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0 mt-0.5" />
                 ) : (
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <AlertTriangle className="w-4 h-4 text-rose-700 dark:text-rose-400 shrink-0 mt-0.5" />
                 )}
                 <span>{deviceNotice.text}</span>
               </div>
             )}
 
             {pendingImport && onRestoreProjects && (
-              <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 space-y-2.5">
-                <div className="text-xs text-slate-800">
+              <div className="bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 rounded-xl p-3.5 space-y-2.5">
+                <div className="text-xs text-slate-900 dark:text-slate-100">
                   <strong className="font-bold">Restore from &ldquo;{pendingImport.fileName}&rdquo;</strong> ({pendingImport.projects.length} site{pendingImport.projects.length === 1 ? '' : 's'})
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -341,7 +341,7 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
                       });
                       setPendingImport(null);
                     }}
-                    className="min-h-[38px] px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition"
+                    className="min-h-[38px] px-3 py-1.5 bg-slate-950 dark:bg-amber-400 hover:bg-slate-800 dark:hover:bg-amber-300 text-white dark:text-slate-950 text-xs font-bold rounded-lg transition"
                   >
                     Merge with Device Sites
                   </button>
@@ -355,14 +355,14 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
                       });
                       setPendingImport(null);
                     }}
-                    className="min-h-[38px] px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition"
+                    className="min-h-[38px] px-3 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold rounded-lg transition"
                   >
                     Replace All Sites
                   </button>
                   <button
                     type="button"
                     onClick={() => setPendingImport(null)}
-                    className="min-h-[38px] px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg transition"
+                    className="min-h-[38px] px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-semibold rounded-lg transition"
                   >
                     Cancel
                   </button>
@@ -374,9 +374,9 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
               <button
                 type="button"
                 onClick={handleDownloadDeviceBackup}
-                className="flex-1 min-h-[42px] px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 font-semibold rounded-xl text-xs transition inline-flex items-center justify-center gap-2"
+                className="flex-1 min-h-[42px] px-3.5 py-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 font-semibold rounded-xl text-xs transition inline-flex items-center justify-center gap-2"
               >
-                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                <Download className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
                 <span>Save Backup to Device (.json)</span>
               </button>
 
@@ -392,9 +392,9 @@ export const SiteManagerModal: React.FC<SiteManagerModalProps> = ({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex-1 min-h-[42px] px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 font-semibold rounded-xl text-xs transition inline-flex items-center justify-center gap-2"
+                    className="flex-1 min-h-[42px] px-3.5 py-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 font-semibold rounded-xl text-xs transition inline-flex items-center justify-center gap-2"
                   >
-                    <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                    <Upload className="w-3.5 h-3.5 text-indigo-700 dark:text-amber-400" />
                     <span>Load Backup from Device</span>
                   </button>
                 </>

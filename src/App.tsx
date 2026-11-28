@@ -8,6 +8,7 @@ import {
   loadActiveProjectIdSync,
   loadActiveTabSync,
   loadInitialProjectsSync,
+  loadThemeSync,
   persistProjectsToDevice,
   persistProjectsToLocalStorageSync,
   PROJECTS_STORAGE_KEY,
@@ -15,6 +16,8 @@ import {
   requestPersistentDeviceStorage,
   saveActiveProjectId,
   saveActiveTab,
+  saveTheme,
+  ThemeMode,
 } from './utils/deviceStorage';
 import { computeEntityAuditComparisons } from './utils/calculations';
 import { exportProjectToExcel } from './utils/export';
@@ -51,6 +54,7 @@ export default function App() {
   const project = uniqueSavedProjects.find(p => p.id === activeProjectId) || uniqueSavedProjects[0] || INITIAL_DEMO_PROJECT;
 
   const [activeTab, setActiveTab] = useState<AppTab>(() => loadActiveTabSync());
+  const [theme, setTheme] = useState<ThemeMode>(() => loadThemeSync());
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isSiteManagerOpen, setIsSiteManagerOpen] = useState<boolean>(false);
   const [isDriveOpen, setIsDriveOpen] = useState<boolean>(false);
@@ -154,6 +158,15 @@ export default function App() {
   useEffect(() => {
     saveActiveTab(activeTab);
   }, [activeTab]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    saveTheme(theme);
+  }, [theme]);
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
 
   // Cross-tab localStorage synchronization
   useEffect(() => {
@@ -384,16 +397,16 @@ export default function App() {
   }, [activeTab, project]);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-24 md:pb-12 text-slate-900 font-sans selection:bg-amber-400 selection:text-slate-950">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 pb-24 md:pb-12 text-slate-950 dark:text-slate-50 font-sans selection:bg-amber-400 selection:text-slate-950 transition-colors">
       {gmpQuotaExceeded && (
-        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50">
+        <div className="bg-amber-50 dark:bg-amber-950/90 border-b border-amber-300 dark:border-amber-700 text-amber-950 dark:text-amber-100 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50">
           <span>
             Google Maps Platform quota reached. If you are the app owner, visit{' '}
             <a
               href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline font-semibold text-amber-950 hover:text-amber-800"
+              className="underline font-semibold text-amber-950 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200"
             >
               maps developer site
             </a>{' '}
@@ -407,6 +420,8 @@ export default function App() {
         project={project}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenNewProject={() => setIsSiteManagerOpen(true)}
         onOpenDrive={() => setIsDriveOpen(true)}
@@ -450,16 +465,16 @@ export default function App() {
 
         {activeTab === 'entity' && (
             <div className="space-y-5 pb-4">
-              <div className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 mb-5 border-b border-slate-100">
+              <div className="bg-white dark:bg-slate-900 rounded-xl p-5 sm:p-6 border border-slate-300/90 dark:border-slate-700 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 mb-5 border-b border-slate-200 dark:border-slate-700">
                   <div className="min-w-0">
-                    <div className="text-xs font-medium text-slate-500 mb-1">
+                    <div className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                       {project.name} &middot; Measurement Reconciliation
                     </div>
-                    <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                    <h2 className="text-lg sm:text-xl font-bold text-slate-950 dark:text-white tracking-tight">
                       Entity Measurements vs. Audit Verification
                     </h2>
-                    <p className="text-xs sm:text-sm text-slate-500 mt-1 tabular-nums">
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 tabular-nums">
                       {entityTabSummary.total === 0
                         ? 'Compare entity-claimed Nos, Length, Width & Thickness against audit verification'
                         : `${entityTabSummary.total} item${entityTabSummary.total === 1 ? '' : 's'} · ${entityTabSummary.matched} matched · ${entityTabSummary.excess} excess${entityTabSummary.underpayment > 0 ? ` · ${entityTabSummary.underpayment} underpayment` : ''}`}
@@ -470,15 +485,15 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => exportProjectToExcel(project)}
-                      className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap"
+                      className="min-h-[40px] px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap"
                     >
-                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
                       <span>Excel</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setExportReportState({ isOpen: true, scope: 'all' })}
-                      className="min-h-[40px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap"
+                      className="min-h-[40px] px-4 py-2 bg-slate-950 dark:bg-amber-400 hover:bg-slate-800 dark:hover:bg-amber-300 text-white dark:text-slate-950 font-bold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap"
                     >
                       <Download className="w-3.5 h-3.5" />
                       <span>Export PDF</span>
@@ -575,8 +590,8 @@ export default function App() {
           <div
             className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border text-xs sm:text-sm font-semibold transition-all ${
               saveToast.type === 'success'
-                ? 'bg-slate-900 text-white border-slate-800'
-                : 'bg-rose-600 text-white border-rose-500'
+                ? 'bg-slate-950 dark:bg-slate-800 text-white border-slate-800 dark:border-slate-600'
+                : 'bg-rose-700 text-white border-rose-500'
             }`}
           >
             {saveToast.type === 'success' ? (

@@ -5,6 +5,7 @@ export const PROJECTS_STORAGE_KEY = 'sitepro_projects_list';
 export const LEGACY_PROJECT_STORAGE_KEY = 'sitepro_project_data';
 export const ACTIVE_PROJECT_ID_KEY = 'sitepro_active_project_id';
 export const ACTIVE_TAB_KEY = 'sitepro_active_tab';
+export const THEME_STORAGE_KEY = 'sitepro_theme';
 
 const IDB_NAME = 'sitepro_device_db';
 const IDB_VERSION = 1;
@@ -119,6 +120,26 @@ export function loadActiveTabSync(): AppTab {
 export function saveActiveTab(tab: AppTab): void {
   try {
     localStorage.setItem(ACTIVE_TAB_KEY, tab);
+  } catch {
+    // Ignore
+  }
+}
+
+export type ThemeMode = 'light' | 'dark';
+
+export function loadThemeSync(): ThemeMode {
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'dark' || saved === 'light') return saved;
+  } catch {
+    // Ignore
+  }
+  return 'light';
+}
+
+export function saveTheme(theme: ThemeMode): void {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
     // Ignore
   }

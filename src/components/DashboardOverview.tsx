@@ -98,7 +98,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
   const getSectionClass = (key: string, baseClass: string) =>
     fullscreenSectionId === key
-      ? 'fixed inset-0 z-[45] bg-white p-5 sm:p-8 overflow-y-auto transition-all'
+      ? 'fixed inset-0 z-[45] bg-white dark:bg-slate-900 text-slate-950 dark:text-slate-50 p-5 sm:p-8 overflow-y-auto transition-all'
       : `${baseClass} transition-all`;
 
   const m = useMemo(() => computeMeasurements(project), [project]);
@@ -143,23 +143,23 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     <div className="space-y-4 sm:space-y-6 pb-4">
       
       {/* Overview Header Card */}
-      <div className={getSectionClass('overviewHeader', 'bg-white rounded-xl p-5 sm:p-6 border border-slate-200')}>
+      <div className={getSectionClass('overviewHeader', 'bg-white dark:bg-slate-900 rounded-xl p-5 sm:p-6 border border-slate-300/90 dark:border-slate-700')}>
         <div className="flex flex-col gap-5">
           <div className="flex items-start justify-between gap-3">
             <button
               type="button"
               onClick={() => toggleSection('overviewHeader')}
               aria-expanded={!isSectionCollapsed('overviewHeader')}
-              className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 rounded-lg"
+              className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400 rounded-lg"
             >
-              <div className="text-xs font-medium text-slate-500 mb-1">
+              <div className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                 Site Overview &middot; Audit Summary
               </div>
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 group-hover:text-slate-700 transition">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white group-hover:text-slate-700 dark:group-hover:text-slate-200 transition">
                 {project.name}
               </h2>
               {!isSectionCollapsed('overviewHeader') && (
-                <p className="text-slate-600 text-xs sm:text-sm leading-relaxed mt-1.5 max-w-2xl">
+                <p className="text-slate-700 dark:text-slate-300 text-xs sm:text-sm leading-relaxed mt-1.5 max-w-2xl">
                   Review measured quantities across fencing and road works, sign off physical site verification, or customize predetermined units and necessary items.
                 </p>
               )}
@@ -174,8 +174,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 title={fullscreenSectionId === 'overviewHeader' ? 'Restore card size (Esc)' : 'Extend to full screen'}
                 className={`w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition ${
                   fullscreenSectionId === 'overviewHeader'
-                    ? 'bg-slate-900 text-white hover:bg-slate-800'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                    ? 'bg-slate-950 dark:bg-amber-400 text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-amber-300'
+                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
                 }`}
               >
                 {fullscreenSectionId === 'overviewHeader' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -185,7 +185,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 onClick={() => toggleSection('overviewHeader')}
                 aria-expanded={!isSectionCollapsed('overviewHeader')}
                 aria-label="Toggle Site Overview"
-                className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition"
+                className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center justify-center transition"
               >
                 <ChevronDown
                   className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('overviewHeader') ? '-rotate-90' : 'rotate-0'}`}
@@ -195,13 +195,13 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
 
           {!isSectionCollapsed('overviewHeader') && (
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-3 border-t border-slate-100 flex-shrink-0">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-3 border-t border-slate-200 dark:border-slate-700 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveTab('audit')}
-                className="min-h-[40px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
+                className="min-h-[40px] px-4 py-2 bg-slate-950 dark:bg-amber-400 hover:bg-slate-800 dark:hover:bg-amber-300 text-white dark:text-slate-950 font-bold rounded-lg text-xs inline-flex items-center justify-center gap-2 transition whitespace-nowrap shrink-0"
               >
-                <ShieldCheck className="w-4 h-4 text-amber-400" />
+                <ShieldCheck className="w-4 h-4 text-amber-400 dark:text-slate-950" />
                 <span>Open Auditor</span>
                 <ArrowRight className="w-3.5 h-3.5 hidden sm:inline" />
               </button>
@@ -209,27 +209,27 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap shrink-0"
+                className="min-h-[40px] px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap shrink-0"
               >
-                <Settings className="w-3.5 h-3.5 text-slate-500" />
+                <Settings className="w-3.5 h-3.5 text-slate-700 dark:text-slate-300" />
                 <span>Units &amp; Items</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => exportProjectToExcel(project)}
-                className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap shrink-0"
+                className="min-h-[40px] px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap shrink-0"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
                 <span>Excel</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => (onOpenReport ? onOpenReport('all') : exportProjectToPdf(project, currentGps))}
-                className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap shrink-0"
+                className="min-h-[40px] px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 font-semibold rounded-lg text-xs inline-flex items-center justify-center gap-1.5 transition whitespace-nowrap shrink-0"
               >
-                <Download className="w-3.5 h-3.5 text-slate-600" />
+                <Download className="w-3.5 h-3.5 text-slate-700 dark:text-slate-300" />
                 <span>Export PDF</span>
               </button>
             </div>
@@ -244,18 +244,18 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('audit')}
-          className="text-left bg-white rounded-xl p-4 sm:p-5 border border-slate-200 hover:border-slate-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+          className="text-left bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-300/90 dark:border-slate-700 hover:border-slate-500 dark:hover:border-amber-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400"
         >
           <div className="flex items-center justify-between gap-2 mb-2.5">
-            <span className="text-xs font-medium text-slate-500 truncate">Total Fence Posts</span>
-            <div className="p-1.5 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition shrink-0">
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 truncate">Total Fence Posts</span>
+            <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 group-hover:bg-slate-950 dark:group-hover:bg-amber-400 group-hover:text-white dark:group-hover:text-slate-950 transition shrink-0">
               <Fence className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums mb-1">
-            {totalPostsCount} <span className="text-xs sm:text-sm font-medium text-slate-500">{postUnit}</span>
+          <div className="text-2xl sm:text-3xl font-extrabold text-slate-950 dark:text-white tabular-nums mb-1">
+            {totalPostsCount} <span className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300">{postUnit}</span>
           </div>
-          <div className="text-[11px] sm:text-xs text-slate-500 truncate tabular-nums">
+          <div className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 truncate tabular-nums">
             {postBreakdownParts.length > 0 ? postBreakdownParts.join(' · ') : 'No post types active'}
           </div>
         </button>
@@ -264,21 +264,21 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('audit')}
-          className="text-left bg-white rounded-xl p-4 sm:p-5 border border-slate-200 hover:border-slate-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+          className="text-left bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-300/90 dark:border-slate-700 hover:border-slate-500 dark:hover:border-amber-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400"
         >
           <div className="flex items-center justify-between gap-2 mb-2.5">
-            <span className="text-xs font-medium text-slate-500 truncate">Fence Mesh &amp; RRM</span>
-            <div className="p-1.5 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition shrink-0">
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 truncate">Fence Mesh &amp; RRM</span>
+            <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 group-hover:bg-slate-950 dark:group-hover:bg-amber-400 group-hover:text-white dark:group-hover:text-slate-950 transition shrink-0">
               <Layers className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums mb-1">
+          <div className="text-2xl sm:text-3xl font-extrabold text-slate-950 dark:text-white tabular-nums mb-1">
             {(meshUnitIsArea ? m.meshArea : totalMeshLength).toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
-            <span className="text-xs sm:text-sm font-medium text-slate-500">{items.chainLinkMesh.unit}</span>
+            <span className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300">{items.chainLinkMesh.unit}</span>
           </div>
-          <div className="text-[11px] sm:text-xs text-slate-500 truncate tabular-nums">
+          <div className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 truncate tabular-nums">
             RRM &middot;{' '}
-            <span className="font-semibold text-slate-700">
+            <span className="font-semibold text-slate-900 dark:text-slate-100">
               {(rrmUnitIsLength ? m.rrmLen : totalRrmVolume).toFixed(2)} {items.rrmWall.unit}
             </span>
           </div>
@@ -288,32 +288,32 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('audit')}
-          className="text-left bg-white rounded-xl p-4 sm:p-5 border border-slate-200 hover:border-slate-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+          className="text-left bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-300/90 dark:border-slate-700 hover:border-slate-500 dark:hover:border-amber-400 transition group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400"
         >
           <div className="flex items-center justify-between gap-2 mb-2.5">
-            <span className="text-xs font-medium text-slate-500 truncate">Road Alignment</span>
-            <div className="p-1.5 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-900 group-hover:text-white transition shrink-0">
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 truncate">Road Alignment</span>
+            <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 group-hover:bg-slate-950 dark:group-hover:bg-amber-400 group-hover:text-white dark:group-hover:text-slate-950 transition shrink-0">
               <Route className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 tabular-nums mb-1">
-            {totalRoadLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-xs sm:text-sm font-medium text-slate-500">{items.roadMeasurement.unit}</span>
+          <div className="text-2xl sm:text-3xl font-extrabold text-slate-950 dark:text-white tabular-nums mb-1">
+            {totalRoadLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300">{items.roadMeasurement.unit}</span>
           </div>
-          <div className="text-[11px] sm:text-xs text-slate-500 truncate tabular-nums">
-            Ch. <span className="font-mono font-semibold text-slate-700">{roadChainageStart}–{roadChainageEnd}</span> &middot; {totalRoadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} {areaUnit}
+          <div className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 truncate tabular-nums">
+            Ch. <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">{roadChainageStart}–{roadChainageEnd}</span> &middot; {totalRoadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} {areaUnit}
           </div>
         </button>
 
         {/* Metric 4: Audit Status */}
-        <div className="bg-white rounded-xl p-4 sm:p-5 border border-slate-200">
+        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-5 border border-slate-300/90 dark:border-slate-700">
           <div className="flex items-center justify-between gap-2 mb-2.5">
-            <span className="text-xs font-medium text-slate-500 truncate">Audit Status</span>
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 truncate">Audit Status</span>
             <div className={`p-1.5 rounded-lg shrink-0 ${
               auditStatus === 'fully_compliant'
-                ? 'bg-emerald-50 text-emerald-600'
+                ? 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-400'
                 : auditStatus === 'verified_with_variance'
-                ? 'bg-amber-50 text-amber-600'
-                : 'bg-slate-100 text-slate-600'
+                ? 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
             }`}>
               {auditStatus === 'fully_compliant' ? (
                 <CheckCircle2 className="w-4 h-4" />
@@ -324,14 +324,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               )}
             </div>
           </div>
-          <div className="text-base sm:text-xl font-bold text-slate-900 mb-1 truncate">
+          <div className="text-base sm:text-xl font-bold text-slate-950 dark:text-white mb-1 truncate">
             {auditStatus === 'fully_compliant'
               ? 'Fully Compliant'
               : auditStatus === 'verified_with_variance'
               ? 'Variance Noted'
               : 'Pending Audit'}
           </div>
-          <div className="text-[11px] sm:text-xs text-slate-500 truncate">
+          <div className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 truncate">
             {project.auditInfo?.auditorName || 'No auditor assigned yet'}
           </div>
         </div>
@@ -342,7 +342,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start">
         
         {/* Chain-Link Fence Material Breakdown */}
-        <div className={getSectionClass('fencingBreakdown', 'bg-white rounded-xl p-5 border border-slate-200')}>
+        <div className={getSectionClass('fencingBreakdown', 'bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-300/90 dark:border-slate-700')}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2">
             <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
               <button
@@ -351,15 +351,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 aria-expanded={!isSectionCollapsed('fencingBreakdown')}
                 className="flex items-center gap-3 text-left min-w-0 flex-1 group"
               >
-                <div className="p-2 bg-amber-50 text-amber-700 rounded-xl flex-shrink-0">
+                <div className="p-2 bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 rounded-xl flex-shrink-0">
                   <Fence className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
+                  <h3 className="font-bold text-slate-950 dark:text-white group-hover:text-slate-700 dark:group-hover:text-slate-200 transition text-sm sm:text-base truncate">
                     Chain-Link &amp; Fencing Breakdown
                   </h3>
                   {isSectionCollapsed('fencingBreakdown') && (
-                    <p className="text-xs text-slate-500 tabular-nums truncate">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 tabular-nums truncate">
                       {totalPostsCount} {postUnit} &middot; {(meshUnitIsArea ? m.meshArea : totalMeshLength).toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.chainLinkMesh.unit} mesh &middot; {(rrmUnitIsLength ? m.rrmLen : totalRrmVolume).toFixed(2)} {items.rrmWall.unit} RRM
                     </p>
                   )}
@@ -374,8 +374,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   aria-pressed={fullscreenSectionId === 'fencingBreakdown'}
                   className={`w-10 h-10 rounded-lg flex items-center justify-center transition ${
                     fullscreenSectionId === 'fencingBreakdown'
-                      ? 'bg-slate-900 text-white hover:bg-slate-800'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                      ? 'bg-slate-950 dark:bg-amber-400 text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-amber-300'
+                      : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
                   }`}
                 >
                   {fullscreenSectionId === 'fencingBreakdown' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -385,7 +385,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   onClick={() => toggleSection('fencingBreakdown')}
                   aria-expanded={!isSectionCollapsed('fencingBreakdown')}
                   aria-label="Toggle Chain-Link & Fencing Breakdown"
-                  className="w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition"
+                  className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition"
                 >
                   <ChevronDown
                     className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('fencingBreakdown') ? '-rotate-90' : 'rotate-0'}`}
@@ -398,14 +398,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               <button
                 type="button"
                 onClick={() => (onOpenReport ? onOpenReport('fencing') : exportChainLinkPdf(project, currentGps))}
-                className="min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
+                className="min-h-[40px] sm:min-h-[36px] text-xs font-bold text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 px-3.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
               >
                 PDF
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('audit')}
-                className="min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-indigo-600 hover:text-indigo-700 px-2 py-1.5 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                className="min-h-[40px] sm:min-h-[36px] text-xs font-bold text-indigo-700 dark:text-amber-400 hover:text-indigo-800 dark:hover:text-amber-300 px-2 py-1.5 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
               >
                 <span>Measure</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -418,8 +418,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 title={fullscreenSectionId === 'fencingBreakdown' ? 'Restore card size (Esc)' : 'Extend to full screen'}
                 className={`hidden sm:flex w-8 h-8 rounded-lg items-center justify-center transition ${
                   fullscreenSectionId === 'fencingBreakdown'
-                    ? 'bg-slate-900 text-white hover:bg-slate-800'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                    ? 'bg-slate-950 dark:bg-amber-400 text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-amber-300'
+                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
                 }`}
               >
                 {fullscreenSectionId === 'fencingBreakdown' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -429,7 +429,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 onClick={() => toggleSection('fencingBreakdown')}
                 aria-expanded={!isSectionCollapsed('fencingBreakdown')}
                 aria-label="Toggle Chain-Link & Fencing Breakdown"
-                className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 items-center justify-center transition"
+                className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 items-center justify-center transition"
               >
                 <ChevronDown
                   className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('fencingBreakdown') ? '-rotate-90' : 'rotate-0'}`}
@@ -439,55 +439,55 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
 
           {!isSectionCollapsed('fencingBreakdown') && (
-            <div className="divide-y divide-slate-100 mt-4">
+            <div className="divide-y divide-slate-200 dark:divide-slate-700/80 mt-4">
               {items.anglePosts.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">Angle Posts (Corner / End)</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{totalAnglePosts} {items.anglePosts.unit}</span>
+                  <span className="text-slate-700 dark:text-slate-300">Angle Posts (Corner / End)</span>
+                  <span className="font-bold text-slate-950 dark:text-white tabular-nums">{totalAnglePosts} {items.anglePosts.unit}</span>
                 </div>
               )}
               {items.intermediatePosts.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">Intermediate Posts</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{totalIntermediatePosts} {items.intermediatePosts.unit}</span>
+                  <span className="text-slate-700 dark:text-slate-300">Intermediate Posts</span>
+                  <span className="font-bold text-slate-950 dark:text-white tabular-nums">{totalIntermediatePosts} {items.intermediatePosts.unit}</span>
                 </div>
               )}
               {items.strutPosts.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">Strut Posts</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{totalStrutPosts} {items.strutPosts.unit}</span>
+                  <span className="text-slate-700 dark:text-slate-300">Strut Posts</span>
+                  <span className="font-bold text-slate-950 dark:text-white tabular-nums">{totalStrutPosts} {items.strutPosts.unit}</span>
                 </div>
               )}
               {items.gatePosts.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">Gate Posts</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{totalGatePosts} {items.gatePosts.unit}</span>
+                  <span className="text-slate-700 dark:text-slate-300">Gate Posts</span>
+                  <span className="font-bold text-slate-950 dark:text-white tabular-nums">{totalGatePosts} {items.gatePosts.unit}</span>
                 </div>
               )}
               {items.chainLinkMesh.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">
+                  <span className="text-slate-700 dark:text-slate-300">
                     {meshUnitIsArea ? 'Chain-Link Mesh Area' : 'Chain-Link Mesh Length'}
                   </span>
-                  <span className="font-bold text-slate-900 tabular-nums">
+                  <span className="font-bold text-slate-950 dark:text-white tabular-nums">
                     {(meshUnitIsArea ? m.meshArea : totalMeshLength).toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.chainLinkMesh.unit}
                   </span>
                 </div>
               )}
               {items.rrmWall.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">
+                  <span className="text-slate-700 dark:text-slate-300">
                     {rrmUnitIsLength ? 'RRM Plinth Wall Length' : 'RRM Plinth Wall Masonry Volume'}
                   </span>
-                  <span className="font-bold text-slate-900 tabular-nums">
+                  <span className="font-bold text-slate-950 dark:text-white tabular-nums">
                     {(rrmUnitIsLength ? m.rrmLen : totalRrmVolume).toFixed(2)} {items.rrmWall.unit}
                   </span>
                 </div>
               )}
               {fencingCustom.map((c) => (
                 <div key={c.id} className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">{c.name}</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{c.quantity} {c.unit}</span>
+                  <span className="text-slate-700 dark:text-slate-300">{c.name}</span>
+                  <span className="font-bold text-slate-950 dark:text-white tabular-nums">{c.quantity} {c.unit}</span>
                 </div>
               ))}
             </div>
@@ -495,7 +495,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         {/* Road Construction & General Items Breakdown */}
-        <div className={getSectionClass('roadBreakdown', 'bg-white rounded-xl p-5 border border-slate-200')}>
+        <div className={getSectionClass('roadBreakdown', 'bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-300/90 dark:border-slate-700')}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-2">
             <div className="flex items-center justify-between gap-2 min-w-0 flex-1">
               <button
@@ -504,15 +504,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 aria-expanded={!isSectionCollapsed('roadBreakdown')}
                 className="flex items-center gap-3 text-left min-w-0 flex-1 group"
               >
-                <div className="p-2 bg-emerald-50 text-emerald-700 rounded-xl flex-shrink-0">
+                <div className="p-2 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-400 rounded-xl flex-shrink-0">
                   <Route className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
+                  <h3 className="font-bold text-slate-950 dark:text-white group-hover:text-slate-700 dark:group-hover:text-slate-200 transition text-sm sm:text-base truncate">
                     Road &amp; Additional Site Items
                   </h3>
                   {isSectionCollapsed('roadBreakdown') && (
-                    <p className="text-xs text-slate-500 tabular-nums truncate">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 tabular-nums truncate">
                       Ch. {roadChainageStart}–{roadChainageEnd} &middot; {totalRoadLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.roadMeasurement.unit} &middot; {totalRoadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} {areaUnit} &middot; Drain: {totalSideDrain.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.sideDrain.unit}
                     </p>
                   )}
@@ -527,8 +527,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   aria-pressed={fullscreenSectionId === 'roadBreakdown'}
                   className={`w-10 h-10 rounded-lg flex items-center justify-center transition ${
                     fullscreenSectionId === 'roadBreakdown'
-                      ? 'bg-slate-900 text-white hover:bg-slate-800'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                      ? 'bg-slate-950 dark:bg-amber-400 text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-amber-300'
+                      : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
                   }`}
                 >
                   {fullscreenSectionId === 'roadBreakdown' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -538,7 +538,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   onClick={() => toggleSection('roadBreakdown')}
                   aria-expanded={!isSectionCollapsed('roadBreakdown')}
                   aria-label="Toggle Road & Additional Site Items"
-                  className="w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition"
+                  className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center transition"
                 >
                   <ChevronDown
                     className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('roadBreakdown') ? '-rotate-90' : 'rotate-0'}`}
@@ -551,14 +551,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               <button
                 type="button"
                 onClick={() => (onOpenReport ? onOpenReport('road') : exportRoadPdf(project, currentGps))}
-                className="min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
+                className="min-h-[40px] sm:min-h-[36px] text-xs font-bold text-slate-900 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 px-3.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
               >
                 PDF
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('audit')}
-                className="min-h-[40px] sm:min-h-[36px] text-xs font-semibold text-indigo-600 hover:text-indigo-700 px-2 py-1.5 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                className="min-h-[40px] sm:min-h-[36px] text-xs font-bold text-indigo-700 dark:text-amber-400 hover:text-indigo-800 dark:hover:text-amber-300 px-2 py-1.5 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
               >
                 <span>Measure</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -571,8 +571,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 title={fullscreenSectionId === 'roadBreakdown' ? 'Restore card size (Esc)' : 'Extend to full screen'}
                 className={`hidden sm:flex w-8 h-8 rounded-lg items-center justify-center transition ${
                   fullscreenSectionId === 'roadBreakdown'
-                    ? 'bg-slate-900 text-white hover:bg-slate-800'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                    ? 'bg-slate-950 dark:bg-amber-400 text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-amber-300'
+                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
                 }`}
               >
                 {fullscreenSectionId === 'roadBreakdown' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -582,7 +582,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 onClick={() => toggleSection('roadBreakdown')}
                 aria-expanded={!isSectionCollapsed('roadBreakdown')}
                 aria-label="Toggle Road & Additional Site Items"
-                className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 items-center justify-center transition"
+                className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 items-center justify-center transition"
               >
                 <ChevronDown
                   className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('roadBreakdown') ? '-rotate-90' : 'rotate-0'}`}
@@ -592,37 +592,37 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
 
           {!isSectionCollapsed('roadBreakdown') && (
-            <div className="divide-y divide-slate-100 mt-4">
+            <div className="divide-y divide-slate-200 dark:divide-slate-700/80 mt-4">
               {items.roadMeasurement.enabled && (
                 <>
                   <div className="flex justify-between items-center py-2.5 text-sm">
-                    <span className="text-slate-600">Road Chainage</span>
-                    <span className="font-bold font-mono text-slate-900 tabular-nums">{roadChainageStart} &rarr; {roadChainageEnd}</span>
+                    <span className="text-slate-700 dark:text-slate-300">Road Chainage</span>
+                    <span className="font-bold font-mono text-slate-950 dark:text-white tabular-nums">{roadChainageStart} &rarr; {roadChainageEnd}</span>
                   </div>
                   <div className="flex justify-between items-center py-2.5 text-sm">
-                    <span className="text-slate-600">Road Alignment Length</span>
-                    <span className="font-bold text-slate-900 tabular-nums">{totalRoadLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.roadMeasurement.unit}</span>
+                    <span className="text-slate-700 dark:text-slate-300">Road Alignment Length</span>
+                    <span className="font-bold text-slate-950 dark:text-white tabular-nums">{totalRoadLength.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.roadMeasurement.unit}</span>
                   </div>
                   <div className="flex justify-between items-center py-2.5 text-sm">
-                    <span className="text-slate-600">Road Breadth / Width</span>
-                    <span className="font-bold text-slate-900 tabular-nums">{roadWidth} {lengthUnit}</span>
+                    <span className="text-slate-700 dark:text-slate-300">Road Breadth / Width</span>
+                    <span className="font-bold text-slate-950 dark:text-white tabular-nums">{roadWidth} {lengthUnit}</span>
                   </div>
                   <div className="flex justify-between items-center py-2.5 text-sm">
-                    <span className="text-slate-600">Total Road Surface Area</span>
-                    <span className="font-bold text-emerald-700 tabular-nums">{totalRoadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} {areaUnit}</span>
+                    <span className="text-slate-700 dark:text-slate-300">Total Road Surface Area</span>
+                    <span className="font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">{totalRoadArea.toLocaleString(undefined, { maximumFractionDigits: 2 })} {areaUnit}</span>
                   </div>
                 </>
               )}
               {items.sideDrain.enabled && (
                 <div className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">Road Side Drain Length</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{totalSideDrain.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.sideDrain.unit}</span>
+                  <span className="text-slate-700 dark:text-slate-300">Road Side Drain Length</span>
+                  <span className="font-bold text-slate-950 dark:text-white tabular-nums">{totalSideDrain.toLocaleString(undefined, { maximumFractionDigits: 2 })} {items.sideDrain.unit}</span>
                 </div>
               )}
               {roadAndGeneralCustom.map((c) => (
                 <div key={c.id} className="flex justify-between items-center py-2.5 text-sm">
-                  <span className="text-slate-600">{c.name}</span>
-                  <span className="font-bold text-slate-900 tabular-nums">{c.quantity} {c.unit}</span>
+                  <span className="text-slate-700 dark:text-slate-300">{c.name}</span>
+                  <span className="font-bold text-slate-950 dark:text-white tabular-nums">{c.quantity} {c.unit}</span>
                 </div>
               ))}
             </div>
@@ -632,7 +632,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       </div>
 
       {/* Site Location & Accurate Report Map */}
-      <div className={getSectionClass('reportMap', 'bg-white rounded-xl p-5 border border-slate-200')}>
+      <div className={getSectionClass('reportMap', 'bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-300/90 dark:border-slate-700')}>
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
@@ -640,14 +640,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             aria-expanded={!isSectionCollapsed('reportMap')}
             className="flex items-center gap-3 text-left min-w-0 flex-1 group"
           >
-            <div className="p-2 bg-rose-50 text-rose-600 rounded-xl flex-shrink-0">
+            <div className="p-2 bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-400 rounded-xl flex-shrink-0">
               <MapPin className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
+              <h3 className="font-bold text-slate-950 dark:text-white group-hover:text-slate-700 dark:group-hover:text-slate-200 transition text-sm sm:text-base truncate">
                 Site Location &amp; Accurate Report Map
               </h3>
-              <p className="text-xs text-slate-500 truncate mt-0.5">
+              <p className="text-xs text-slate-600 dark:text-slate-300 truncate mt-0.5">
                 {project.siteCoordinates
                   ? `${project.siteCoordinates.lat.toFixed(6)}°, ${project.siteCoordinates.lng.toFixed(6)}° · Included in PDF exports`
                   : project.location
@@ -666,8 +666,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               title={fullscreenSectionId === 'reportMap' ? 'Restore card size (Esc)' : 'Extend to full screen'}
               className={`w-10 h-10 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition ${
                 fullscreenSectionId === 'reportMap'
-                  ? 'bg-slate-900 text-white hover:bg-slate-800'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  ? 'bg-slate-950 dark:bg-amber-400 text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-amber-300'
+                  : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
               }`}
             >
               {fullscreenSectionId === 'reportMap' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -677,7 +677,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               onClick={() => toggleSection('reportMap')}
               aria-expanded={!isSectionCollapsed('reportMap')}
               aria-label="Toggle Site Location & Accurate Report Map"
-              className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
+              className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0 transition"
             >
               <ChevronDown
                 className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('reportMap') ? '-rotate-90' : 'rotate-0'}`}
@@ -699,7 +699,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       </div>
 
       {/* Entity Measurements vs. Audit Verification Section */}
-      <div className={getSectionClass('entityComparison', 'bg-white rounded-xl p-5 border border-slate-200')}>
+      <div className={getSectionClass('entityComparison', 'bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-300/90 dark:border-slate-700')}>
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
@@ -707,14 +707,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             aria-expanded={!isSectionCollapsed('entityComparison')}
             className="flex items-center gap-3 text-left min-w-0 flex-1 group"
           >
-            <div className="p-2 bg-slate-100 text-slate-700 rounded-lg flex-shrink-0">
+            <div className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-amber-400 rounded-lg flex-shrink-0">
               <Scale className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition text-sm sm:text-base truncate">
+              <h3 className="font-bold text-slate-950 dark:text-white group-hover:text-slate-700 dark:group-hover:text-slate-200 transition text-sm sm:text-base truncate">
                 Entity Measurements vs. Audit Verification &amp; Variances
               </h3>
-              <p className="text-xs text-slate-500 truncate mt-0.5 tabular-nums">
+              <p className="text-xs text-slate-600 dark:text-slate-300 truncate mt-0.5 tabular-nums">
                 {entitySummary.total === 0
                   ? 'Add entity-claimed Nos, Length, Width & Thickness to compare against audit verification'
                   : `${entitySummary.total} item${entitySummary.total === 1 ? '' : 's'} · ${entitySummary.matched} matched · ${entitySummary.excess} excess${entitySummary.underpayment > 0 ? ` · ${entitySummary.underpayment} underpayment` : ''}`}
@@ -726,7 +726,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('entity')}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold transition whitespace-nowrap"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 text-xs font-semibold transition whitespace-nowrap"
             >
               <span>Open Tab</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -739,8 +739,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               title={fullscreenSectionId === 'entityComparison' ? 'Restore card size (Esc)' : 'Extend to full screen'}
               className={`w-10 h-10 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition ${
                 fullscreenSectionId === 'entityComparison'
-                  ? 'bg-slate-900 text-white hover:bg-slate-800'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                  ? 'bg-slate-950 dark:bg-amber-400 text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-amber-300'
+                  : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
               }`}
             >
               {fullscreenSectionId === 'entityComparison' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -750,7 +750,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               onClick={() => toggleSection('entityComparison')}
               aria-expanded={!isSectionCollapsed('entityComparison')}
               aria-label="Toggle Entity Measurements Comparison"
-              className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
+              className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0 transition"
             >
               <ChevronDown
                 className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('entityComparison') ? '-rotate-90' : 'rotate-0'}`}
@@ -778,10 +778,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             type="button"
             onClick={() => toggleSection('auditorRecord')}
             aria-expanded={!isSectionCollapsed('auditorRecord')}
-            className="min-h-[44px] flex-1 flex items-center justify-between gap-2 text-slate-700 hover:text-slate-900 text-xs font-bold py-1 group text-left"
+            className="min-h-[44px] flex-1 flex items-center justify-between gap-2 text-slate-900 dark:text-slate-100 hover:text-slate-700 dark:hover:text-white text-xs font-bold py-1 group text-left"
           >
             <span className="inline-flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+              <ShieldCheck className="w-4 h-4 text-indigo-700 dark:text-amber-400 shrink-0" />
               <span>Auditor Verification &amp; Site Inspection Record</span>
             </span>
           </button>
@@ -795,8 +795,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               title={fullscreenSectionId === 'auditorRecord' ? 'Restore card size (Esc)' : 'Extend to full screen'}
               className={`w-9 h-9 sm:w-7 sm:h-7 rounded-lg border flex items-center justify-center transition ${
                 fullscreenSectionId === 'auditorRecord'
-                  ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800'
-                  : 'bg-white border-slate-200 hover:bg-slate-100 text-slate-600'
+                  ? 'bg-slate-950 dark:bg-amber-400 border-slate-950 dark:border-amber-400 text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-amber-300'
+                  : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
               }`}
             >
               {fullscreenSectionId === 'auditorRecord' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -806,7 +806,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               onClick={() => toggleSection('auditorRecord')}
               aria-expanded={!isSectionCollapsed('auditorRecord')}
               aria-label="Toggle Auditor Verification & Site Inspection Record"
-              className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 transition"
+              className="w-9 h-9 sm:w-7 sm:h-7 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0 transition"
             >
               <ChevronDown
                 className={`w-4 h-4 transition-transform duration-200 ${isSectionCollapsed('auditorRecord') ? '-rotate-90' : 'rotate-0'}`}

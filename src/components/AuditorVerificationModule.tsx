@@ -217,28 +217,28 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
   };
 
   const inputClass =
-    'w-full px-3 py-2.5 min-h-[44px] bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition';
+    'w-full px-3 py-2.5 min-h-[44px] bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-xl text-base sm:text-sm text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:border-indigo-600 dark:focus:border-amber-400 focus:ring-2 focus:ring-indigo-500/20 dark:focus:ring-amber-400/25 transition';
 
   return (
     <div className={embedded ? 'space-y-4' : 'space-y-6 pb-12'}>
       
       {!embedded && (
-        <div className="bg-white rounded-2xl p-6 md:p-8 border border-slate-200/90">
-          <div className="text-xs font-semibold text-indigo-600 mb-1.5">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 md:p-8 border border-slate-300/90 dark:border-slate-700">
+          <div className="text-xs font-semibold text-indigo-700 dark:text-amber-400 mb-1.5">
             Technical Inspector &middot; Audit Verification
           </div>
-          <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900 mb-2">
+          <h2 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white mb-2">
             Physical Site Audit &amp; Compliance Verification
           </h2>
-          <p className="text-slate-600 text-sm max-w-2xl leading-relaxed">
+          <p className="text-slate-700 dark:text-slate-300 text-sm max-w-2xl leading-relaxed">
             Verify logged quantities against physical on-site measurements and counts, document variances, and record official audit sign-off.
           </p>
         </div>
       )}
 
       {savedSuccess && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-4 rounded-xl flex items-center gap-3">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+        <div className="bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-700 text-emerald-950 dark:text-emerald-200 p-4 rounded-xl flex items-center gap-3">
+          <CheckCircle2 className="w-5 h-5 text-emerald-700 dark:text-emerald-400 flex-shrink-0" />
           <span className="text-sm font-semibold">Audit verification record saved and synced with project reports.</span>
         </div>
       )}
@@ -246,7 +246,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         
         {/* Auditor Input Form */}
-        <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90 lg:col-span-1">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-300/90 dark:border-slate-700 lg:col-span-1">
           <button
             type="button"
             onClick={() => toggleCard('signOff')}
@@ -254,19 +254,19 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
             className="w-full min-h-[44px] flex items-center justify-between gap-2.5 text-left group"
           >
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="p-2 bg-indigo-50 text-indigo-700 rounded-xl flex-shrink-0">
+              <div className="p-2 bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 rounded-xl flex-shrink-0">
                 <UserCheck className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition">Auditor Sign-Off</h3>
+                <h3 className="font-bold text-slate-950 dark:text-white group-hover:text-slate-700 dark:group-hover:text-slate-200 transition">Auditor Sign-Off</h3>
                 {collapsedCards.signOff && (
-                  <p className="text-xs text-slate-500 truncate">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 truncate">
                     {auditorName || 'No inspector'} &middot; {auditDate}
                   </p>
                 )}
               </div>
             </div>
-            <span className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 group-hover:bg-slate-200 text-slate-600 flex items-center justify-center flex-shrink-0 transition">
+            <span className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 dark:bg-slate-800 group-hover:bg-slate-200 dark:group-hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center flex-shrink-0 transition">
               <ChevronDown
                 className={`w-4 h-4 transition-transform duration-200 ${collapsedCards.signOff ? '-rotate-90' : 'rotate-0'}`}
               />
@@ -276,7 +276,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
           {!collapsedCards.signOff && (
           <form onSubmit={handleSaveAudit} className="space-y-4 mt-5">
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Auditor / Inspector Name</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Auditor / Inspector Name</label>
               <input
                 type="text"
                 placeholder="e.g. J. Tenzin (Senior Inspector)"
@@ -288,7 +288,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Audit Inspection Date</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Audit Inspection Date</label>
               <input
                 type="date"
                 value={auditDate}
@@ -299,7 +299,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Compliance Status</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Compliance Status</label>
               <select
                 value={auditStatus}
                 onChange={(e) => setAuditStatus(e.target.value as 'pending' | 'verified_with_variance' | 'fully_compliant')}
@@ -311,13 +311,13 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
               </select>
             </div>
 
-            <div className="border-t border-slate-100 pt-4 space-y-3">
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <h4 className="text-xs font-bold text-slate-800">Physically Verified Counts</h4>
+                <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">Physically Verified Counts</h4>
                 <button
                   type="button"
                   onClick={handleSyncFromLogged}
-                  className="min-h-[40px] px-2.5 -mr-2 text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-lg inline-flex items-center gap-1 transition"
+                  className="min-h-[40px] px-2.5 -mr-2 text-xs font-bold text-indigo-700 dark:text-amber-400 hover:text-indigo-800 dark:hover:text-amber-300 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg inline-flex items-center gap-1 transition"
                   title="Copy current logged totals"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
@@ -327,7 +327,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
 
               {anyPostsEnabled && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Verified Total Posts ({postUnit})
                   </label>
                   <input
@@ -338,14 +338,14 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       dirtyFieldsRef.current.add('posts');
                       setVerifiedPosts(parseInt(e.target.value, 10) || 0);
                     }}
-                    className={`${inputClass} font-bold text-indigo-700`}
+                    className={`${inputClass} font-bold text-indigo-800 dark:text-amber-300`}
                   />
                 </div>
               )}
 
               {items.chainLinkMesh.enabled && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Verified Mesh {meshUnitIsArea ? 'Area' : 'Length'} ({items.chainLinkMesh.unit})
                   </label>
                   <input
@@ -357,14 +357,14 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       dirtyFieldsRef.current.add('mesh');
                       setVerifiedMesh(parseFloat(e.target.value) || 0);
                     }}
-                    className={`${inputClass} font-bold text-indigo-700`}
+                    className={`${inputClass} font-bold text-indigo-800 dark:text-amber-300`}
                   />
                 </div>
               )}
 
               {items.rrmWall.enabled && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Verified RMM Wall {rrmUnitIsLength ? 'Length' : 'Volume'} ({items.rrmWall.unit})
                   </label>
                   <input
@@ -376,14 +376,14 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       dirtyFieldsRef.current.add('rrm');
                       setVerifiedRrm(parseFloat(e.target.value) || 0);
                     }}
-                    className={`${inputClass} font-bold text-indigo-700`}
+                    className={`${inputClass} font-bold text-indigo-800 dark:text-amber-300`}
                   />
                 </div>
               )}
 
               {items.roadMeasurement.enabled && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Verified Road Length ({items.roadMeasurement.unit})
                   </label>
                   <input
@@ -395,14 +395,14 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       dirtyFieldsRef.current.add('road');
                       setVerifiedRoad(parseFloat(e.target.value) || 0);
                     }}
-                    className={`${inputClass} font-bold text-indigo-700`}
+                    className={`${inputClass} font-bold text-indigo-800 dark:text-amber-300`}
                   />
                 </div>
               )}
 
               {items.sideDrain.enabled && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Verified Side Drain ({items.sideDrain.unit})
                   </label>
                   <input
@@ -414,14 +414,14 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       dirtyFieldsRef.current.add('drain');
                       setVerifiedSideDrain(parseFloat(e.target.value) || 0);
                     }}
-                    className={`${inputClass} font-bold text-indigo-700`}
+                    className={`${inputClass} font-bold text-indigo-800 dark:text-amber-300`}
                   />
                 </div>
               )}
 
               {enabledCustom.map((c) => (
                 <div key={c.id}>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                     Verified {c.name} ({c.unit})
                   </label>
                   <input
@@ -436,26 +436,26 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                         [c.id]: parseFloat(e.target.value) || 0,
                       }));
                     }}
-                    className={`${inputClass} font-bold text-indigo-700`}
+                    className={`${inputClass} font-bold text-indigo-800 dark:text-amber-300`}
                   />
                 </div>
               ))}
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Auditor Remarks &amp; Observations</label>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Auditor Remarks &amp; Observations</label>
               <textarea
                 rows={3}
                 placeholder="Note construction quality, core tests, or discrepancies..."
                 value={generalRemarks}
                 onChange={(e) => setGeneralRemarks(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
+                className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-xl text-base sm:text-sm text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:border-indigo-600 dark:focus:border-amber-400 focus:ring-2 focus:ring-indigo-500/20 dark:focus:ring-amber-400/25 transition"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full min-h-[44px] py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-sm transition inline-flex items-center justify-center gap-2"
+              className="w-full min-h-[44px] py-2.5 bg-indigo-700 dark:bg-amber-400 hover:bg-indigo-800 dark:hover:bg-amber-300 text-white dark:text-slate-950 font-bold rounded-xl text-sm transition inline-flex items-center justify-center gap-2"
             >
               <Save className="w-4 h-4" />
               <span>Save Verification Record</span>
@@ -465,7 +465,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
         </div>
 
         {/* Variance & Compliance Comparison Table */}
-        <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200/90 lg:col-span-2 flex flex-col justify-between gap-5 sm:gap-6">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-6 border border-slate-300/90 dark:border-slate-700 lg:col-span-2 flex flex-col justify-between gap-5 sm:gap-6">
           <div className="space-y-4 sm:space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-start justify-between gap-2 flex-1 min-w-0">
@@ -475,15 +475,15 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                   aria-expanded={!collapsedCards.reconciliation}
                   className="text-left flex-1 min-w-0 group"
                 >
-                  <h3 className="font-bold text-slate-900 group-hover:text-slate-700 transition">Audit Variance &amp; Reconciliation</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Comparing logged measurements against physically verified inspection counts</p>
+                  <h3 className="font-bold text-slate-950 dark:text-white group-hover:text-slate-700 dark:group-hover:text-slate-200 transition">Audit Variance &amp; Reconciliation</h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">Comparing logged measurements against physically verified inspection counts</p>
                 </button>
                 <button
                   type="button"
                   onClick={() => toggleCard('reconciliation')}
                   aria-expanded={!collapsedCards.reconciliation}
                   aria-label="Toggle Audit Variance & Reconciliation"
-                  className="sm:hidden w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition"
+                  className="sm:hidden w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0 transition"
                 >
                   <ChevronDown
                     className={`w-4 h-4 transition-transform duration-200 ${collapsedCards.reconciliation ? '-rotate-90' : 'rotate-0'}`}
@@ -493,10 +493,10 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
               <div className="flex items-center gap-3">
                 <div className={`inline-flex items-center gap-1.5 text-xs font-bold ${
                   auditStatus === 'fully_compliant'
-                    ? 'text-emerald-700'
+                    ? 'text-emerald-700 dark:text-emerald-400'
                     : auditStatus === 'verified_with_variance'
-                    ? 'text-amber-700'
-                    : 'text-slate-600'
+                    ? 'text-amber-700 dark:text-amber-300'
+                    : 'text-slate-700 dark:text-slate-300'
                 }`}>
                   {auditStatus === 'fully_compliant' ? (
                     <CheckCircle2 className="w-4 h-4" />
@@ -514,7 +514,7 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                   onClick={() => toggleCard('reconciliation')}
                   aria-expanded={!collapsedCards.reconciliation}
                   aria-label="Toggle Audit Variance & Reconciliation"
-                  className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 items-center justify-center transition"
+                  className="hidden sm:flex w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 items-center justify-center transition"
                 >
                   <ChevronDown
                     className={`w-4 h-4 transition-transform duration-200 ${collapsedCards.reconciliation ? '-rotate-90' : 'rotate-0'}`}
@@ -581,20 +581,20 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                       };
                     }),
                   ].map((row) => (
-                    <div key={row.key} className="p-3 bg-slate-50/90 border border-slate-200/80 rounded-xl space-y-2">
-                      <div className="text-xs font-bold text-slate-900">{row.label}</div>
+                    <div key={row.key} className="p-3 bg-slate-50 dark:bg-slate-800/70 border border-slate-300/80 dark:border-slate-700 rounded-xl space-y-2">
+                      <div className="text-xs font-bold text-slate-950 dark:text-white">{row.label}</div>
                       <div className="grid grid-cols-3 gap-2 text-xs tabular-nums">
                         <div>
-                          <div className="text-[11px] text-slate-500">Logged</div>
-                          <div className="font-semibold text-slate-700 mt-0.5">{row.logged}</div>
+                          <div className="text-[11px] text-slate-600 dark:text-slate-300">Logged</div>
+                          <div className="font-semibold text-slate-800 dark:text-slate-200 mt-0.5">{row.logged}</div>
                         </div>
                         <div>
-                          <div className="text-[11px] text-slate-500">Verified</div>
-                          <div className="font-bold text-indigo-700 mt-0.5">{row.verified}</div>
+                          <div className="text-[11px] text-slate-600 dark:text-slate-300">Verified</div>
+                          <div className="font-bold text-indigo-800 dark:text-amber-300 mt-0.5">{row.verified}</div>
                         </div>
                         <div className="text-right">
-                          <div className="text-[11px] text-slate-500">Variance</div>
-                          <div className={`font-bold mt-0.5 ${row.diff < 0 ? 'text-red-600' : row.diff > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
+                          <div className="text-[11px] text-slate-600 dark:text-slate-300">Variance</div>
+                          <div className={`font-bold mt-0.5 ${row.diff < 0 ? 'text-rose-700 dark:text-rose-400' : row.diff > 0 ? 'text-sky-700 dark:text-sky-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                             {row.diffLabel}
                           </div>
                         </div>
@@ -607,64 +607,64 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                 <div className="hidden sm:block overflow-x-auto">
                   <table className="w-full text-left text-sm border-collapse">
                     <thead>
-                      <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500">
+                      <tr className="border-b border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300">
                         <th className="py-3 pr-4">Work Component</th>
                         <th className="py-3 px-3 text-right">Logged</th>
                         <th className="py-3 px-3 text-right">Verified</th>
                         <th className="py-3 pl-3 text-right">Variance</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 tabular-nums">
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700/80 tabular-nums">
                       {anyPostsEnabled && (
-                        <tr className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 pr-4 font-semibold text-slate-900">Chain-Link Posts Total</td>
-                          <td className="py-3 px-3 text-right text-slate-600">{plannedPosts} {postUnit}</td>
-                          <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedPosts} {postUnit}</td>
-                          <td className={`py-3 pl-3 text-right font-bold ${postVariance < 0 ? 'text-red-600' : postVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
+                        <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition">
+                          <td className="py-3 pr-4 font-semibold text-slate-950 dark:text-white">Chain-Link Posts Total</td>
+                          <td className="py-3 px-3 text-right text-slate-700 dark:text-slate-300">{plannedPosts} {postUnit}</td>
+                          <td className="py-3 px-3 text-right font-bold text-indigo-800 dark:text-amber-300">{verifiedPosts} {postUnit}</td>
+                          <td className={`py-3 pl-3 text-right font-bold ${postVariance < 0 ? 'text-rose-700 dark:text-rose-400' : postVariance > 0 ? 'text-sky-700 dark:text-sky-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                             {formatVariance(postVariance, 0)} {postUnit}
                           </td>
                         </tr>
                       )}
                       {items.chainLinkMesh.enabled && (
-                        <tr className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 pr-4 font-semibold text-slate-900">
+                        <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition">
+                          <td className="py-3 pr-4 font-semibold text-slate-950 dark:text-white">
                             {meshUnitIsArea ? 'Chain-Link Mesh Area' : 'Chain-Link Mesh Length'}
                           </td>
-                          <td className="py-3 px-3 text-right text-slate-600">{plannedMesh} {items.chainLinkMesh.unit}</td>
-                          <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedMesh} {items.chainLinkMesh.unit}</td>
-                          <td className={`py-3 pl-3 text-right font-bold ${meshVariance < 0 ? 'text-red-600' : meshVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
+                          <td className="py-3 px-3 text-right text-slate-700 dark:text-slate-300">{plannedMesh} {items.chainLinkMesh.unit}</td>
+                          <td className="py-3 px-3 text-right font-bold text-indigo-800 dark:text-amber-300">{verifiedMesh} {items.chainLinkMesh.unit}</td>
+                          <td className={`py-3 pl-3 text-right font-bold ${meshVariance < 0 ? 'text-rose-700 dark:text-rose-400' : meshVariance > 0 ? 'text-sky-700 dark:text-sky-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                             {formatVariance(meshVariance, 2)} {items.chainLinkMesh.unit}
                           </td>
                         </tr>
                       )}
                       {items.rrmWall.enabled && (
-                        <tr className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 pr-4 font-semibold text-slate-900">
+                        <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition">
+                          <td className="py-3 pr-4 font-semibold text-slate-950 dark:text-white">
                             {rrmUnitIsLength ? 'RMM Wall Length' : 'RMM Wall Masonry Volume'}
                           </td>
-                          <td className="py-3 px-3 text-right text-slate-600">{plannedRrm.toFixed(2)} {items.rrmWall.unit}</td>
-                          <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedRrm.toFixed(2)} {items.rrmWall.unit}</td>
-                          <td className={`py-3 pl-3 text-right font-bold ${rrmVariance < 0 ? 'text-red-600' : rrmVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
+                          <td className="py-3 px-3 text-right text-slate-700 dark:text-slate-300">{plannedRrm.toFixed(2)} {items.rrmWall.unit}</td>
+                          <td className="py-3 px-3 text-right font-bold text-indigo-800 dark:text-amber-300">{verifiedRrm.toFixed(2)} {items.rrmWall.unit}</td>
+                          <td className={`py-3 pl-3 text-right font-bold ${rrmVariance < 0 ? 'text-rose-700 dark:text-rose-400' : rrmVariance > 0 ? 'text-sky-700 dark:text-sky-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                             {formatVariance(rrmVariance, 2)} {items.rrmWall.unit}
                           </td>
                         </tr>
                       )}
                       {items.roadMeasurement.enabled && (
-                        <tr className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 pr-4 font-semibold text-slate-900">Road Alignment Length</td>
-                          <td className="py-3 px-3 text-right text-slate-600">{plannedRoad} {items.roadMeasurement.unit}</td>
-                          <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedRoad} {items.roadMeasurement.unit}</td>
-                          <td className={`py-3 pl-3 text-right font-bold ${roadVariance < 0 ? 'text-red-600' : roadVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
+                        <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition">
+                          <td className="py-3 pr-4 font-semibold text-slate-950 dark:text-white">Road Alignment Length</td>
+                          <td className="py-3 px-3 text-right text-slate-700 dark:text-slate-300">{plannedRoad} {items.roadMeasurement.unit}</td>
+                          <td className="py-3 px-3 text-right font-bold text-indigo-800 dark:text-amber-300">{verifiedRoad} {items.roadMeasurement.unit}</td>
+                          <td className={`py-3 pl-3 text-right font-bold ${roadVariance < 0 ? 'text-rose-700 dark:text-rose-400' : roadVariance > 0 ? 'text-sky-700 dark:text-sky-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                             {formatVariance(roadVariance, 2)} {items.roadMeasurement.unit}
                           </td>
                         </tr>
                       )}
                       {items.sideDrain.enabled && (
-                        <tr className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 pr-4 font-semibold text-slate-900">Road Side Drain Length</td>
-                          <td className="py-3 px-3 text-right text-slate-600">{plannedSideDrain} {items.sideDrain.unit}</td>
-                          <td className="py-3 px-3 text-right font-bold text-indigo-700">{verifiedSideDrain} {items.sideDrain.unit}</td>
-                          <td className={`py-3 pl-3 text-right font-bold ${sideDrainVariance < 0 ? 'text-red-600' : sideDrainVariance > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
+                        <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition">
+                          <td className="py-3 pr-4 font-semibold text-slate-950 dark:text-white">Road Side Drain Length</td>
+                          <td className="py-3 px-3 text-right text-slate-700 dark:text-slate-300">{plannedSideDrain} {items.sideDrain.unit}</td>
+                          <td className="py-3 px-3 text-right font-bold text-indigo-800 dark:text-amber-300">{verifiedSideDrain} {items.sideDrain.unit}</td>
+                          <td className={`py-3 pl-3 text-right font-bold ${sideDrainVariance < 0 ? 'text-rose-700 dark:text-rose-400' : sideDrainVariance > 0 ? 'text-sky-700 dark:text-sky-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                             {formatVariance(sideDrainVariance, 2)} {items.sideDrain.unit}
                           </td>
                         </tr>
@@ -673,11 +673,11 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                         const vVal = verifiedCustom[c.id] ?? c.quantity;
                         const diff = cleanVariance(vVal, c.quantity, 2);
                         return (
-                          <tr key={c.id} className="hover:bg-slate-50/70 transition">
-                            <td className="py-3 pr-4 font-semibold text-slate-900">{c.name}</td>
-                            <td className="py-3 px-3 text-right text-slate-600">{c.quantity} {c.unit}</td>
-                            <td className="py-3 px-3 text-right font-bold text-indigo-700">{vVal} {c.unit}</td>
-                            <td className={`py-3 pl-3 text-right font-bold ${diff < 0 ? 'text-red-600' : diff > 0 ? 'text-blue-600' : 'text-emerald-600'}`}>
+                          <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition">
+                            <td className="py-3 pr-4 font-semibold text-slate-950 dark:text-white">{c.name}</td>
+                            <td className="py-3 px-3 text-right text-slate-700 dark:text-slate-300">{c.quantity} {c.unit}</td>
+                            <td className="py-3 px-3 text-right font-bold text-indigo-800 dark:text-amber-300">{vVal} {c.unit}</td>
+                            <td className={`py-3 pl-3 text-right font-bold ${diff < 0 ? 'text-rose-700 dark:text-rose-400' : diff > 0 ? 'text-sky-700 dark:text-sky-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
                               {formatVariance(diff, 2)} {c.unit}
                             </td>
                           </tr>
@@ -687,16 +687,16 @@ export const AuditorVerificationModule: React.FC<AuditorVerificationModuleProps>
                   </table>
                 </div>
 
-                <div className="bg-slate-50/90 rounded-xl p-4 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+                <div className="bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
                     <span>Inspector Signature Record</span>
                     <span className="tabular-nums">Date &middot; {auditDate}</span>
                   </div>
-                  <div className="text-sm text-slate-800">
+                  <div className="text-sm text-slate-900 dark:text-slate-100">
                     {generalRemarks ? `"${generalRemarks}"` : 'No remarks recorded yet.'}
                   </div>
-                  <div className="text-xs text-slate-500 pt-2 border-t border-slate-200/80">
-                    Inspected by: <span className="font-semibold text-slate-800">{auditorName || 'Pending Inspector Assignment'}</span>
+                  <div className="text-xs text-slate-600 dark:text-slate-300 pt-2 border-t border-slate-300/80 dark:border-slate-700">
+                    Inspected by: <span className="font-bold text-slate-950 dark:text-white">{auditorName || 'Pending Inspector Assignment'}</span>
                   </div>
                 </div>
               </>

@@ -384,10 +384,10 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
   }, [comparisons]);
 
   const inputBase =
-    'w-full px-2.5 py-1.5 min-h-[38px] bg-white border border-slate-200 rounded-lg text-xs sm:text-sm text-slate-900 tabular-nums focus:outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 transition';
+    'w-full px-2.5 py-1.5 min-h-[38px] bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg text-xs sm:text-sm text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-400 tabular-nums focus:outline-none focus:border-slate-950 dark:focus:border-amber-400 focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-amber-400/25 transition';
 
   const auditInputBase =
-    'w-full px-2.5 py-1.5 min-h-[38px] bg-white border border-indigo-200 rounded-lg text-xs sm:text-sm font-semibold text-indigo-950 tabular-nums focus:outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/15 transition';
+    'w-full px-2.5 py-1.5 min-h-[38px] bg-white dark:bg-slate-950 border border-indigo-300 dark:border-indigo-500/70 rounded-lg text-xs sm:text-sm font-semibold text-indigo-950 dark:text-amber-300 placeholder:text-slate-400 dark:placeholder:text-slate-400 tabular-nums focus:outline-none focus:border-indigo-700 dark:focus:border-amber-400 focus:ring-2 focus:ring-indigo-500/15 dark:focus:ring-amber-400/25 transition';
 
   const captureHint = (row: EntityMeasurementItem, fieldSuffix: string, label: string, val?: number) => {
     if (!onCaptureLocation) return;
@@ -406,7 +406,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
   ) => {
     if (status === 'pending' || variance === null) {
       return (
-        <div className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500">
+        <div className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
           <Clock className="w-3.5 h-3.5 shrink-0" />
           <span>Pending Audit</span>
         </div>
@@ -421,8 +421,8 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
     if (status === 'matched' || variance === 0) {
       return (
         <div className="text-right">
-          <div className="text-sm font-bold text-emerald-700 tabular-nums">0 {unit}</div>
-          <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+          <div className="text-sm font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">0 {unit}</div>
+          <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="w-3 h-3 shrink-0" />
             <span>Matched</span>
           </div>
@@ -436,11 +436,11 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
     if (status === 'excess' || status === 'shortfall') {
       return (
         <div className="text-right">
-          <div className="text-sm font-bold text-red-600 tabular-nums">
+          <div className="text-sm font-bold text-rose-700 dark:text-rose-400 tabular-nums">
             {qtyText} {unit}
-            <span className="text-[11px] font-medium text-red-500">{pctSuffix}</span>
+            <span className="text-[11px] font-medium text-rose-600 dark:text-rose-300">{pctSuffix}</span>
           </div>
-          <div className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
+          <div className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/70 px-1.5 py-0.5 rounded border border-rose-300 dark:border-rose-700">
             <AlertTriangle className="w-3 h-3 shrink-0" />
             <span>Excess</span>
           </div>
@@ -450,11 +450,11 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
 
     return (
       <div className="text-right">
-        <div className="text-sm font-bold text-blue-600 tabular-nums">
+        <div className="text-sm font-bold text-sky-700 dark:text-sky-400 tabular-nums">
           {qtyText} {unit}
-          <span className="text-[11px] font-medium text-blue-500">{pctSuffix}</span>
+          <span className="text-[11px] font-medium text-sky-600 dark:text-sky-300">{pctSuffix}</span>
         </div>
-        <div className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+        <div className="inline-flex items-center gap-1 text-[11px] font-bold text-sky-800 dark:text-sky-300 bg-sky-50 dark:bg-sky-950/70 px-1.5 py-0.5 rounded border border-sky-300 dark:border-sky-700">
           <TrendingUp className="w-3 h-3 shrink-0" />
           <span>Underpayment</span>
         </div>
@@ -482,7 +482,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
         {diffs.map((d, i) => (
           <span
             key={i}
-            className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-50 text-red-700 border border-red-200 tabular-nums"
+            className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-700 tabular-nums"
           >
             {d}
           </span>
@@ -494,9 +494,9 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
   return (
     <div className={embedded ? 'space-y-4' : 'space-y-5'}>
       {/* Controls & Entity Name Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 pb-3 border-b border-slate-200">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 pb-3 border-b border-slate-300 dark:border-slate-700">
         <div className="w-full lg:max-w-sm">
-          <label className="block text-xs font-medium text-slate-600 mb-1">
+          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
             Executing Entity / Contractor Name
           </label>
           <input
@@ -504,7 +504,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
             value={project.entityName ?? ''}
             onChange={(e) => handleEntityNameChange(e.target.value)}
             placeholder="e.g. Contractor / Executing Agency"
-            className="w-full px-3 py-2 min-h-[42px] bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition"
+            className="w-full px-3 py-2 min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-xl text-sm font-medium text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:border-indigo-600 dark:focus:border-amber-400 focus:ring-2 focus:ring-indigo-500/20 dark:focus:ring-amber-400/25 transition"
           />
         </div>
 
@@ -512,10 +512,10 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
           <button
             type="button"
             onClick={handleLoadSiteItems}
-            className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
+            className="min-h-[40px] px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
             title="Populate entity rows from active project items"
           >
-            <ListChecks className="w-4 h-4 text-slate-500" />
+            <ListChecks className="w-4 h-4 text-slate-700 dark:text-slate-300" />
             <span>Load Site Items</span>
           </button>
 
@@ -523,10 +523,10 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
             <button
               type="button"
               onClick={handleSyncAllFromFieldWorks}
-              className="min-h-[40px] px-3.5 py-2 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
+              className="min-h-[40px] px-3.5 py-2 bg-white dark:bg-emerald-950/60 hover:bg-emerald-50 dark:hover:bg-emerald-900/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
               title="Reset overridden Audit values to extract live from Field Measurement Works"
             >
-              <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+              <RefreshCw className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
               <span>Sync Audit from Field Works</span>
             </button>
           )}
@@ -534,9 +534,9 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
           <button
             type="button"
             onClick={handleAddRow}
-            className="min-h-[40px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
+            className="min-h-[40px] px-4 py-2 bg-slate-950 dark:bg-amber-400 hover:bg-slate-800 dark:hover:bg-amber-300 text-white dark:text-slate-950 text-xs font-bold rounded-lg inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition"
           >
-            <Plus className="w-4 h-4 text-amber-400" />
+            <Plus className="w-4 h-4 text-amber-400 dark:text-slate-950" />
             <span>Add Measurement Item</span>
           </button>
         </div>
@@ -546,28 +546,28 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
       {comparisons.length > 0 && (
         <div className="space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-slate-50 border border-slate-200/80 rounded-xl px-3.5 py-2.5">
-              <div className="text-xs text-slate-500 font-medium">Items Compared</div>
-              <div className="text-lg font-extrabold text-slate-900 tabular-nums mt-0.5">
+            <div className="bg-slate-50 dark:bg-slate-800/80 border border-slate-300/80 dark:border-slate-700 rounded-xl px-3.5 py-2.5">
+              <div className="text-xs text-slate-600 dark:text-slate-300 font-semibold">Items Compared</div>
+              <div className="text-lg font-extrabold text-slate-950 dark:text-white tabular-nums mt-0.5">
                 {stats.total}
               </div>
             </div>
-            <div className="bg-slate-50 border border-slate-200/80 rounded-xl px-3.5 py-2.5">
-              <div className="text-xs text-slate-500 font-medium">Matched Items</div>
-              <div className="text-lg font-extrabold text-emerald-700 tabular-nums mt-0.5">
+            <div className="bg-slate-50 dark:bg-slate-800/80 border border-slate-300/80 dark:border-slate-700 rounded-xl px-3.5 py-2.5">
+              <div className="text-xs text-slate-600 dark:text-slate-300 font-semibold">Matched Items</div>
+              <div className="text-lg font-extrabold text-emerald-700 dark:text-emerald-400 tabular-nums mt-0.5">
                 {stats.matched}
               </div>
             </div>
-            <div className="bg-slate-50 border border-slate-200/80 rounded-xl px-3.5 py-2.5">
-              <div className="text-xs text-slate-500 font-medium">Excess (Entity Higher)</div>
-              <div className="text-lg font-extrabold text-red-600 tabular-nums mt-0.5">
+            <div className="bg-slate-50 dark:bg-slate-800/80 border border-slate-300/80 dark:border-slate-700 rounded-xl px-3.5 py-2.5">
+              <div className="text-xs text-slate-600 dark:text-slate-300 font-semibold">Excess (Entity Higher)</div>
+              <div className="text-lg font-extrabold text-rose-700 dark:text-rose-400 tabular-nums mt-0.5">
                 {stats.excess}
               </div>
             </div>
-            <div className="bg-slate-50 border border-slate-200/80 rounded-xl px-3.5 py-2.5">
-              <div className="text-xs text-slate-500 font-medium">Underpayment (Audit More)</div>
-              <div className="text-lg font-extrabold text-blue-700 tabular-nums mt-0.5">
-                {stats.underpayment} <span className="text-xs font-medium text-slate-500">· {stats.pending} pending</span>
+            <div className="bg-slate-50 dark:bg-slate-800/80 border border-slate-300/80 dark:border-slate-700 rounded-xl px-3.5 py-2.5">
+              <div className="text-xs text-slate-600 dark:text-slate-300 font-semibold">Underpayment (Audit More)</div>
+              <div className="text-lg font-extrabold text-sky-700 dark:text-sky-400 tabular-nums mt-0.5">
+                {stats.underpayment} <span className="text-xs font-medium text-slate-600 dark:text-slate-300">· {stats.pending} pending</span>
               </div>
             </div>
           </div>
@@ -576,39 +576,39 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
             <div
               className={`grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-xl p-3.5 border ${
                 stats.netOutcome === 'excess'
-                  ? 'bg-red-50/40 border-red-200'
+                  ? 'bg-rose-50/70 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700'
                   : stats.netOutcome === 'underpayment'
-                  ? 'bg-blue-50/40 border-blue-200'
-                  : 'bg-emerald-50/40 border-emerald-200'
+                  ? 'bg-sky-50/70 dark:bg-sky-950/40 border-sky-300 dark:border-sky-700'
+                  : 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700'
               }`}
             >
               <div>
-                <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                   Total Claimed Value (Entity MB)
                 </div>
-                <div className="text-base sm:text-lg font-extrabold text-slate-900 tabular-nums mt-0.5">
+                <div className="text-base sm:text-lg font-extrabold text-slate-950 dark:text-white tabular-nums mt-0.5">
                   {stats.totalEntityAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                   Total Verified Value (Audit MB)
                 </div>
-                <div className="text-base sm:text-lg font-extrabold text-indigo-950 tabular-nums mt-0.5">
+                <div className="text-base sm:text-lg font-extrabold text-indigo-950 dark:text-amber-300 tabular-nums mt-0.5">
                   {stats.totalAuditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
               <div>
-                <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
                   Total Financial Outcome
                 </div>
                 <div
                   className={`text-base sm:text-lg font-extrabold tabular-nums mt-0.5 ${
                     stats.netOutcome === 'excess'
-                      ? 'text-red-600'
+                      ? 'text-rose-700 dark:text-rose-400'
                       : stats.netOutcome === 'underpayment'
-                      ? 'text-blue-600'
-                      : 'text-emerald-700'
+                      ? 'text-sky-700 dark:text-sky-400'
+                      : 'text-emerald-700 dark:text-emerald-400'
                   }`}
                 >
                   {stats.netOutcome === 'excess' && (
@@ -621,7 +621,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                     <span>0.00 (Matched)</span>
                   )}
                 </div>
-                <div className="text-[10.5px] text-slate-500 mt-0.5 font-medium">
+                <div className="text-[10.5px] text-slate-600 dark:text-slate-300 mt-0.5 font-medium">
                   {stats.netOutcome === 'excess' && 'Entity measurement is higher → Excess claimed'}
                   {stats.netOutcome === 'underpayment' && 'Audit measurement is more → Underpayment to entity'}
                   {stats.netOutcome === 'matched' && 'Entity and audit measurements match'}
@@ -634,15 +634,15 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
 
       {/* Empty State */}
       {entityItems.length === 0 ? (
-        <div className="bg-slate-50/80 border border-dashed border-slate-300 rounded-xl p-6 text-center space-y-3">
-          <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-indigo-600 flex items-center justify-center mx-auto">
+        <div className="bg-slate-50 dark:bg-slate-800/60 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-6 text-center space-y-3">
+          <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-indigo-700 dark:text-amber-400 flex items-center justify-center mx-auto">
             <Scale className="w-5 h-5" />
           </div>
           <div className="space-y-1 max-w-md mx-auto">
-            <h4 className="text-sm font-bold text-slate-900">
+            <h4 className="text-sm font-bold text-slate-950 dark:text-white">
               No Entity &amp; Audit Measurements Recorded Yet
             </h4>
-            <p className="text-xs text-slate-600 leading-relaxed">
+            <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
               Every item includes <strong>Entity Measurements</strong>, <strong>Audit Verification</strong>, and <strong>Unit Rate</strong> to automatically calculate quantities, financial amounts, and variances.
             </p>
           </div>
@@ -650,7 +650,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
             <button
               type="button"
               onClick={handleLoadSiteItems}
-              className="min-h-[42px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl inline-flex items-center gap-1.5 transition"
+              className="min-h-[42px] px-4 py-2 bg-slate-950 dark:bg-amber-400 hover:bg-slate-800 dark:hover:bg-amber-300 text-white dark:text-slate-950 text-xs font-bold rounded-xl inline-flex items-center gap-1.5 transition"
             >
               <ListChecks className="w-4 h-4" />
               <span>Load Site Items</span>
@@ -658,7 +658,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
             <button
               type="button"
               onClick={handleAddRow}
-              className="min-h-[42px] px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-800 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 transition"
+              className="min-h-[42px] px-4 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 text-xs font-semibold rounded-xl inline-flex items-center gap-1.5 transition"
             >
               <Plus className="w-4 h-4" />
               <span>Add Custom Item</span>
@@ -674,12 +674,12 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
               return (
                 <div
                   key={item.id}
-                  className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-3.5 shadow-xs"
+                  className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl p-3.5 space-y-3.5 shadow-xs"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-mono text-slate-400 tabular-nums">
+                        <span className="text-xs font-mono text-slate-500 dark:text-slate-300 tabular-nums">
                           #{idx + 1}
                         </span>
                         <input
@@ -694,7 +694,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                          <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
                             Compare Against Audit Item
                           </label>
                           <select
@@ -722,7 +722,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
 
                         <div className="grid grid-cols-3 gap-2">
                           <div>
-                            <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
                               Basis
                             </label>
                             <select
@@ -740,7 +740,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                             </select>
                           </div>
                           <div>
-                            <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
                               Unit
                             </label>
                             <input
@@ -752,7 +752,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] font-medium text-slate-500 mb-0.5">
+                            <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
                               Rate / Unit
                             </label>
                             <input
@@ -780,24 +780,24 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                       type="button"
                       onClick={() => handleDeleteRow(item.id)}
                       aria-label={`Remove ${item.itemName || 'item'}`}
-                      className="min-h-[38px] min-w-[38px] rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center shrink-0 transition"
+                      className="min-h-[38px] min-w-[38px] rounded-lg text-slate-500 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 flex items-center justify-center shrink-0 transition"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
 
                   {/* Section A: Entity Claimed Measurement */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                  <div className="bg-slate-50 dark:bg-slate-800/70 border border-slate-300/80 dark:border-slate-700 rounded-xl p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                      <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
                         1. Entity Claimed Measurement
                       </span>
                       <div className="text-right">
-                        <div className="text-xs font-extrabold text-slate-900 tabular-nums">
+                        <div className="text-xs font-extrabold text-slate-950 dark:text-white tabular-nums">
                           Qty: {row.entityQty} {row.auditUnit || item.unit}
                         </div>
                         {row.entityAmount !== null && (
-                          <div className="text-[11px] font-bold text-slate-600 tabular-nums">
+                          <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 tabular-nums">
                             Amount: {row.entityAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         )}
@@ -805,7 +805,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <div>
-                        <label className="block text-[10.5px] font-medium text-slate-500 mb-0.5">
+                        <label className="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
                           Nos
                         </label>
                         <input
@@ -824,7 +824,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10.5px] font-medium text-slate-500 mb-0.5">
+                        <label className="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
                           Length ({lengthUnit})
                         </label>
                         <input
@@ -843,7 +843,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10.5px] font-medium text-slate-500 mb-0.5">
+                        <label className="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
                           Width ({lengthUnit})
                         </label>
                         <input
@@ -862,7 +862,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10.5px] font-medium text-slate-500 mb-0.5">
+                        <label className="block text-[10.5px] font-semibold text-slate-600 dark:text-slate-300 mb-0.5">
                           Thick. ({lengthUnit})
                         </label>
                         <input
@@ -904,19 +904,19 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                       : item.auditThickness ?? '';
 
                     return (
-                      <div className="bg-indigo-50/40 border border-indigo-200 rounded-xl p-3 space-y-2">
+                      <div className="bg-indigo-50/50 dark:bg-indigo-950/35 border border-indigo-300 dark:border-indigo-700/70 rounded-xl p-3 space-y-2">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider">
+                            <span className="text-[11px] font-bold text-indigo-950 dark:text-indigo-200 uppercase tracking-wider">
                               2. Audit Verified Measurement
                             </span>
                             {isAutoExtracted && (
-                              <span className="text-[11px] font-medium text-emerald-700">
+                              <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
                                 &middot; From Field
                               </span>
                             )}
                             {isLinked && isManualOverride && (
-                              <span className="text-[11px] font-medium text-amber-700">
+                              <span className="text-[11px] font-semibold text-amber-800 dark:text-amber-300">
                                 &middot; Manual override
                               </span>
                             )}
@@ -926,7 +926,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleResetRowToField(item.id)}
-                                className="px-2 py-0.5 bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-700 text-[10px] font-semibold rounded inline-flex items-center gap-1 transition"
+                                className="px-2 py-0.5 bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 text-[10px] font-semibold rounded inline-flex items-center gap-1 transition"
                                 title="Re-extract live from Field Measurement Works"
                               >
                                 <RefreshCw className="w-3 h-3" />
@@ -936,7 +936,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleCopyEntityToAudit(item)}
-                                className="px-2 py-0.5 bg-white hover:bg-indigo-50 border border-indigo-300 text-indigo-700 text-[10px] font-semibold rounded inline-flex items-center gap-1 transition"
+                                className="px-2 py-0.5 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 border border-indigo-300 dark:border-indigo-700 text-indigo-800 dark:text-indigo-300 text-[10px] font-semibold rounded inline-flex items-center gap-1 transition"
                                 title="Copy entity values to audit"
                               >
                                 <Copy className="w-3 h-3" />
@@ -944,11 +944,11 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                               </button>
                             ) : null}
                             <div className="text-right">
-                              <div className="text-xs font-extrabold text-indigo-700 tabular-nums">
+                              <div className="text-xs font-extrabold text-indigo-800 dark:text-amber-300 tabular-nums">
                                 Qty: {row.auditQty !== null ? `${row.auditQty} ${row.auditUnit || item.unit}` : 'Pending'}
                               </div>
                               {row.auditAmount !== null && (
-                                <div className="text-[11px] font-bold text-indigo-900 tabular-nums">
+                                <div className="text-[11px] font-bold text-indigo-950 dark:text-indigo-200 tabular-nums">
                                   Amount: {row.auditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
                               )}
@@ -957,7 +957,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           <div>
-                            <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
+                            <label className="block text-[10.5px] font-semibold text-indigo-950 dark:text-indigo-200 mb-0.5">
                               Audit Nos
                             </label>
                             <input
@@ -976,7 +976,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                             />
                           </div>
                           <div>
-                            <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
+                            <label className="block text-[10.5px] font-semibold text-indigo-950 dark:text-indigo-200 mb-0.5">
                               Audit Length ({lengthUnit})
                             </label>
                             <input
@@ -995,7 +995,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                             />
                           </div>
                           <div>
-                            <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
+                            <label className="block text-[10.5px] font-semibold text-indigo-950 dark:text-indigo-200 mb-0.5">
                               Audit Width ({lengthUnit})
                             </label>
                             <input
@@ -1014,7 +1014,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                             />
                           </div>
                           <div>
-                            <label className="block text-[10.5px] font-medium text-indigo-950 mb-0.5">
+                            <label className="block text-[10.5px] font-semibold text-indigo-950 dark:text-indigo-200 mb-0.5">
                               Audit Thick. ({lengthUnit})
                             </label>
                             <input
@@ -1038,20 +1038,20 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                   })()}
 
                   {/* Section C: Variance & Audit Status */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                  <div className="bg-slate-50 dark:bg-slate-800/70 border border-slate-300/80 dark:border-slate-700 rounded-xl p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <span className="text-xs font-semibold text-slate-600">
+                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                           Qty Variance:
                         </span>
                         {row.amountVariance !== null && (
                           <div
                             className={`text-xs font-bold tabular-nums mt-0.5 ${
                               row.status === 'excess' || (row.status as string) === 'shortfall'
-                                ? 'text-red-600'
+                                ? 'text-rose-700 dark:text-rose-400'
                                 : row.status === 'underpayment'
-                                ? 'text-blue-600'
-                                : 'text-emerald-700'
+                                ? 'text-sky-700 dark:text-sky-400'
+                                : 'text-emerald-700 dark:text-emerald-400'
                             }`}
                           >
                             Cost Var: {row.status === 'excess' || (row.status as string) === 'shortfall'
@@ -1079,7 +1079,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                       value={item.remarks ?? ''}
                       onChange={(e) => handleUpdateRow(item.id, { remarks: e.target.value })}
                       placeholder="Remarks / MB chainage note (optional)..."
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+                      className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:border-indigo-600 dark:focus:border-amber-400"
                     />
                   </div>
                 </div>
@@ -1088,55 +1088,55 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
           </div>
 
           {/* Desktop Dual-Measurement Table with Rate & Calculated Quantities/Amounts */}
-          <div className="hidden xl:block overflow-x-auto border border-slate-200 rounded-xl">
+          <div className="hidden xl:block overflow-x-auto border border-slate-300 dark:border-slate-700 rounded-xl">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="py-2.5 px-3 w-8 text-center bg-slate-100 font-bold text-slate-700" rowSpan={2}>
+                <tr className="border-b border-slate-300 dark:border-slate-700">
+                  <th className="py-2.5 px-3 w-8 text-center bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-200" rowSpan={2}>
                     #
                   </th>
-                  <th className="py-2.5 px-3 min-w-[180px] bg-slate-100 font-bold text-slate-700" rowSpan={2}>
+                  <th className="py-2.5 px-3 min-w-[180px] bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-200" rowSpan={2}>
                     Work Item &amp; Target Link
                   </th>
-                  <th className="py-2 px-2 w-24 text-right bg-amber-50/70 text-amber-950 font-bold border-l border-r border-slate-200" rowSpan={2}>
+                  <th className="py-2 px-2 w-24 text-right bg-amber-100/70 dark:bg-amber-950/60 text-amber-950 dark:text-amber-300 font-bold border-l border-r border-slate-300 dark:border-slate-700" rowSpan={2}>
                     Rate / Unit
                   </th>
-                  <th className="py-2 px-2 text-center bg-slate-100 font-bold text-slate-800 border-r border-slate-200" colSpan={5}>
+                  <th className="py-2 px-2 text-center bg-slate-100 dark:bg-slate-800 font-bold text-slate-900 dark:text-white border-r border-slate-300 dark:border-slate-700" colSpan={5}>
                     Entity Claimed Measurement (MB)
                   </th>
-                  <th className="py-2 px-2 text-center bg-indigo-50/80 font-bold text-indigo-900 border-r border-indigo-200" colSpan={5}>
+                  <th className="py-2 px-2 text-center bg-indigo-100/70 dark:bg-indigo-950/60 font-bold text-indigo-950 dark:text-indigo-200 border-r border-indigo-300 dark:border-indigo-700" colSpan={5}>
                     Audit Field Verified Measurement
                   </th>
-                  <th className="py-2.5 px-3 text-right bg-slate-100 font-bold text-slate-700 w-36" rowSpan={2}>
+                  <th className="py-2.5 px-3 text-right bg-slate-100 dark:bg-slate-800 font-bold text-slate-800 dark:text-slate-200 w-36" rowSpan={2}>
                     Variance (Audit − Entity)
                   </th>
-                  <th className="py-2.5 px-2 w-10 text-center bg-slate-100" rowSpan={2}></th>
+                  <th className="py-2.5 px-2 w-10 text-center bg-slate-100 dark:bg-slate-800" rowSpan={2}></th>
                 </tr>
-                <tr className="border-b border-slate-200 text-[11px] font-semibold text-slate-600">
+                <tr className="border-b border-slate-300 dark:border-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
                   {/* Entity Sub-cols */}
-                  <th className="py-1.5 px-1.5 w-12 text-right bg-slate-50">Nos</th>
-                  <th className="py-1.5 px-1.5 w-16 text-right bg-slate-50">L ({lengthUnit})</th>
-                  <th className="py-1.5 px-1.5 w-16 text-right bg-slate-50">W ({lengthUnit})</th>
-                  <th className="py-1.5 px-1.5 w-16 text-right bg-slate-50">T ({lengthUnit})</th>
-                  <th className="py-1.5 px-2 w-24 text-right bg-slate-100/90 font-bold text-slate-900 border-r border-slate-200">
+                  <th className="py-1.5 px-1.5 w-12 text-right bg-slate-50 dark:bg-slate-800/80">Nos</th>
+                  <th className="py-1.5 px-1.5 w-16 text-right bg-slate-50 dark:bg-slate-800/80">L ({lengthUnit})</th>
+                  <th className="py-1.5 px-1.5 w-16 text-right bg-slate-50 dark:bg-slate-800/80">W ({lengthUnit})</th>
+                  <th className="py-1.5 px-1.5 w-16 text-right bg-slate-50 dark:bg-slate-800/80">T ({lengthUnit})</th>
+                  <th className="py-1.5 px-2 w-24 text-right bg-slate-100 dark:bg-slate-800 font-bold text-slate-950 dark:text-white border-r border-slate-300 dark:border-slate-700">
                     Claimed Qty &amp; Amount
                   </th>
                   {/* Audit Sub-cols */}
-                  <th className="py-1.5 px-1.5 w-12 text-right bg-indigo-50/40 text-indigo-950">Nos</th>
-                  <th className="py-1.5 px-1.5 w-16 text-right bg-indigo-50/40 text-indigo-950">L ({lengthUnit})</th>
-                  <th className="py-1.5 px-1.5 w-16 text-right bg-indigo-50/40 text-indigo-950">W ({lengthUnit})</th>
-                  <th className="py-1.5 px-1.5 w-16 text-right bg-indigo-50/40 text-indigo-950">T ({lengthUnit})</th>
-                  <th className="py-1.5 px-2 w-24 text-right bg-indigo-100/70 font-extrabold text-indigo-900 border-r border-indigo-200">
+                  <th className="py-1.5 px-1.5 w-12 text-right bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-200">Nos</th>
+                  <th className="py-1.5 px-1.5 w-16 text-right bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-200">L ({lengthUnit})</th>
+                  <th className="py-1.5 px-1.5 w-16 text-right bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-200">W ({lengthUnit})</th>
+                  <th className="py-1.5 px-1.5 w-16 text-right bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-200">T ({lengthUnit})</th>
+                  <th className="py-1.5 px-2 w-24 text-right bg-indigo-100/80 dark:bg-indigo-950/70 font-extrabold text-indigo-950 dark:text-amber-300 border-r border-indigo-300 dark:border-indigo-700">
                     Verified Qty &amp; Amount
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 tabular-nums">
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700/80 tabular-nums">
                 {comparisons.map((row, idx) => {
                   const item = row.item;
                   return (
-                    <tr key={item.id} className="align-top hover:bg-slate-50/50 transition">
-                      <td className="py-3 px-3 text-center text-xs text-slate-400 font-mono pt-3.5">
+                    <tr key={item.id} className="align-top hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition">
+                      <td className="py-3 px-3 text-center text-xs text-slate-500 dark:text-slate-300 font-mono pt-3.5">
                         {idx + 1}
                       </td>
                       <td className="py-2 px-3 space-y-1">
@@ -1152,7 +1152,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                             value={getSelectValue(item)}
                             onChange={(e) => handleTargetSelect(item, e.target.value)}
                             aria-label="Linked audit target"
-                            className="w-1/2 px-1.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] text-slate-700 focus:outline-none focus:border-indigo-500"
+                            className="w-1/2 px-1.5 py-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-md text-[11px] text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-600 dark:focus:border-amber-400"
                           >
                             <option value="none">Standalone</option>
                             <option value="angle_post">Angle Post</option>
@@ -1176,7 +1176,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                               handleBasisChange(item, e.target.value as EntityCalcBasis)
                             }
                             aria-label="Calculation basis"
-                            className="w-[30%] px-1 py-1 bg-white border border-slate-200 rounded-md text-[11px] text-slate-700 capitalize focus:outline-none focus:border-indigo-500"
+                            className="w-[30%] px-1 py-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-md text-[11px] text-slate-800 dark:text-slate-100 capitalize focus:outline-none focus:border-indigo-600 dark:focus:border-amber-400"
                           >
                             <option value="auto">Auto</option>
                             <option value="nos">Nos</option>
@@ -1191,7 +1191,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                             placeholder="Unit"
                             aria-label="Measurement unit"
                             title="Unit (auto-synced with basis or editable)"
-                            className="w-[20%] px-1.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-mono text-center text-slate-800 focus:outline-none focus:border-indigo-500"
+                            className="w-[20%] px-1.5 py-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-md text-[11px] font-mono text-center text-slate-900 dark:text-white focus:outline-none focus:border-indigo-600 dark:focus:border-amber-400"
                           />
                         </div>
                         <input
@@ -1199,12 +1199,12 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                           value={item.remarks ?? ''}
                           onChange={(e) => handleUpdateRow(item.id, { remarks: e.target.value })}
                           placeholder="MB chainage / note..."
-                          className="w-full px-2 py-0.5 bg-transparent border-b border-slate-200 text-[11px] text-slate-600 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+                          className="w-full px-2 py-0.5 bg-transparent border-b border-slate-300 dark:border-slate-600 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-400 focus:outline-none focus:border-indigo-600 dark:focus:border-amber-400"
                         />
                       </td>
 
                       {/* Rate Column */}
-                      <td className="py-2 px-2 border-l border-r border-slate-200 bg-amber-50/20">
+                      <td className="py-2 px-2 border-l border-r border-slate-300 dark:border-slate-700 bg-amber-50/30 dark:bg-amber-950/20">
                         <input
                           type="number"
                           inputMode="decimal"
@@ -1219,9 +1219,9 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                             })
                           }
                           placeholder="0.00"
-                          className={`${inputBase} font-bold text-right bg-amber-50/50 border-amber-200 text-amber-950`}
+                          className={`${inputBase} font-bold text-right bg-amber-50/70 dark:bg-slate-950 border-amber-300 dark:border-amber-500/60 text-amber-950 dark:text-amber-300`}
                         />
-                        <div className="text-[10px] text-slate-500 text-right mt-1 truncate">
+                        <div className="text-[10px] text-slate-600 dark:text-slate-300 text-right mt-1 truncate">
                           per {row.auditUnit || item.unit}
                         </div>
                       </td>
@@ -1293,15 +1293,15 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                           className={inputBase}
                         />
                       </td>
-                      <td className="py-2 px-2 text-right border-r border-slate-200 bg-slate-50/50">
-                        <div className="font-extrabold text-slate-900 text-xs sm:text-sm pt-1">
+                      <td className="py-2 px-2 text-right border-r border-slate-300 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40">
+                        <div className="font-extrabold text-slate-950 dark:text-white text-xs sm:text-sm pt-1">
                           {row.entityQty}{' '}
-                          <span className="text-[10px] font-normal text-slate-500">
+                          <span className="text-[10px] font-normal text-slate-600 dark:text-slate-300">
                             {row.auditUnit || item.unit}
                           </span>
                         </div>
                         {row.entityAmount !== null && (
-                          <div className="text-[11px] font-bold text-slate-700 mt-0.5">
+                          <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 mt-0.5">
                             Amt: {row.entityAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         )}
@@ -1327,7 +1327,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
 
                         return (
                           <>
-                            <td className="py-2 px-1.5 bg-indigo-50/20">
+                            <td className="py-2 px-1.5 bg-indigo-50/25 dark:bg-indigo-950/20">
                               <input
                                 type="number"
                                 inputMode="decimal"
@@ -1343,7 +1343,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                                 className={auditInputBase}
                               />
                             </td>
-                            <td className="py-2 px-1.5 bg-indigo-50/20">
+                            <td className="py-2 px-1.5 bg-indigo-50/25 dark:bg-indigo-950/20">
                               <input
                                 type="number"
                                 inputMode="decimal"
@@ -1359,7 +1359,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                                 className={auditInputBase}
                               />
                             </td>
-                            <td className="py-2 px-1.5 bg-indigo-50/20">
+                            <td className="py-2 px-1.5 bg-indigo-50/25 dark:bg-indigo-950/20">
                               <input
                                 type="number"
                                 inputMode="decimal"
@@ -1375,7 +1375,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                                 className={auditInputBase}
                               />
                             </td>
-                            <td className="py-2 px-1.5 bg-indigo-50/20">
+                            <td className="py-2 px-1.5 bg-indigo-50/25 dark:bg-indigo-950/20">
                               <input
                                 type="number"
                                 inputMode="decimal"
@@ -1391,14 +1391,14 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                                 className={auditInputBase}
                               />
                             </td>
-                            <td className="py-2 px-2 text-right border-r border-indigo-200 bg-indigo-50/40">
+                            <td className="py-2 px-2 text-right border-r border-indigo-300 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-950/35">
                               <div className="flex items-center justify-between gap-1 pt-1">
                                 {isLinked && isManualOverride ? (
                                   <button
                                     type="button"
                                     onClick={() => handleResetRowToField(item.id)}
                                     title="Re-extract live from Field Measurement Works"
-                                    className="p-1 rounded text-emerald-700 hover:bg-emerald-100 transition"
+                                    className="p-1 rounded text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition"
                                   >
                                     <RefreshCw className="w-3 h-3" />
                                   </button>
@@ -1407,24 +1407,24 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                                     type="button"
                                     onClick={() => handleCopyEntityToAudit(item)}
                                     title="Copy Entity Claimed dimensions into Audit fields"
-                                    className="p-1 rounded text-indigo-600 hover:bg-indigo-100 transition"
+                                    className="p-1 rounded text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition"
                                   >
                                     <Copy className="w-3 h-3" />
                                   </button>
                                   ) : (
-                                  <span className="text-[10px] font-medium text-emerald-700">
+                                  <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
                                     Field
                                   </span>
                                 )}
-                                <div className="font-extrabold text-indigo-700 text-xs sm:text-sm">
+                                <div className="font-extrabold text-indigo-800 dark:text-amber-300 text-xs sm:text-sm">
                                   {row.auditQty !== null ? row.auditQty : 'Pending'}{' '}
-                                  <span className="text-[10px] font-normal text-indigo-500">
+                                  <span className="text-[10px] font-normal text-indigo-600 dark:text-indigo-300">
                                     {row.auditUnit || item.unit}
                                   </span>
                                 </div>
                               </div>
                               {row.auditAmount !== null && (
-                                <div className="text-[11px] font-bold text-indigo-900 mt-0.5">
+                                <div className="text-[11px] font-bold text-indigo-950 dark:text-indigo-200 mt-0.5">
                                   Amt: {row.auditAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
                               )}
@@ -1445,10 +1445,10 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                           <div
                             className={`text-xs font-bold tabular-nums mt-0.5 ${
                               row.status === 'excess' || (row.status as string) === 'shortfall'
-                                ? 'text-red-600'
+                                ? 'text-rose-700 dark:text-rose-400'
                                 : row.status === 'underpayment'
-                                ? 'text-blue-600'
-                                : 'text-emerald-700'
+                                ? 'text-sky-700 dark:text-sky-400'
+                                : 'text-emerald-700 dark:text-emerald-400'
                             }`}
                           >
                             Cost Var: {row.status === 'excess' || (row.status as string) === 'shortfall'
@@ -1466,7 +1466,7 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                           type="button"
                           onClick={() => handleDeleteRow(item.id)}
                           aria-label={`Remove ${item.itemName || 'item'}`}
-                          className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex items-center justify-center transition"
+                          className="w-8 h-8 rounded-lg text-slate-500 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 inline-flex items-center justify-center transition"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1480,8 +1480,8 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
 
           {/* Unit-Grouped Net Variance Totals */}
           {stats.unitTotals.length > 0 && (
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
-              <div className="text-xs font-bold text-slate-700">
+            <div className="bg-slate-50 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 rounded-xl p-3.5 space-y-2">
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
                 Net Quantity Totals by Unit (Entity Claimed vs. Audit Verified)
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -1493,23 +1493,23 @@ export const EntityComparisonModule: React.FC<EntityComparisonModuleProps> = ({
                   return (
                     <div
                       key={t.unit}
-                      className="bg-white border border-slate-200/90 rounded-lg px-3 py-2 flex items-center justify-between gap-2 text-xs tabular-nums"
+                      className="bg-white dark:bg-slate-900 border border-slate-300/90 dark:border-slate-700 rounded-lg px-3 py-2 flex items-center justify-between gap-2 text-xs tabular-nums"
                     >
                       <div>
-                        <span className="font-bold text-slate-900">{t.unit}</span>
-                        <span className="text-slate-500 ml-1.5">
+                        <span className="font-bold text-slate-950 dark:text-white">{t.unit}</span>
+                        <span className="text-slate-600 dark:text-slate-300 ml-1.5">
                           Claimed {t.entityTotal} · Verified {t.hasAudit ? t.auditTotal : '—'}
                         </span>
                       </div>
                       <span
                         className={`font-bold ${
                           diff === null
-                            ? 'text-slate-500'
+                            ? 'text-slate-600 dark:text-slate-300'
                             : isExcess
-                            ? 'text-red-600'
+                            ? 'text-rose-700 dark:text-rose-400'
                             : isUnder
-                            ? 'text-blue-600'
-                            : 'text-emerald-700'
+                            ? 'text-sky-700 dark:text-sky-400'
+                            : 'text-emerald-700 dark:text-emerald-400'
                         }`}
                       >
                         {diff === null

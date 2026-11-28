@@ -204,8 +204,8 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
   const getCardContainerClass = (id: string, extra = '') =>
     fullscreenCardId === id
-      ? 'fixed inset-0 z-[45] bg-white p-5 sm:p-8 overflow-y-auto flex flex-col gap-4 transition-all'
-      : `bg-white rounded-xl p-5 border border-slate-200 flex flex-col gap-4 transition-all ${extra}`.trim();
+      ? 'fixed inset-0 z-[45] bg-white dark:bg-slate-950 p-5 sm:p-8 overflow-y-auto flex flex-col gap-4 transition-all'
+      : `bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-300 dark:border-slate-700 flex flex-col gap-4 transition-all ${extra}`.trim();
 
   const allCollapsed = allFieldIds.length > 0 && allFieldIds.every(id => isFieldCollapsed(id));
   const handleToggleAllFields = () => {
@@ -374,12 +374,12 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
     const pin = latestInputPinsByField.get(fieldKey);
     if (!pin) return null;
     return (
-      <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 bg-slate-50 border border-slate-200/70 rounded-lg px-2.5 py-1.5 tabular-nums">
+      <div className="flex items-center justify-between gap-2 text-[11px] text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 tabular-nums">
         <span className="inline-flex items-center gap-1.5 truncate">
-          <MapPin className="w-3 h-3 text-violet-600 shrink-0" />
-          <span className="font-medium text-slate-700 truncate">Map pin captured</span>
+          <MapPin className="w-3 h-3 text-violet-700 dark:text-violet-400 shrink-0" />
+          <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">Map pin captured</span>
         </span>
-        <span className="font-mono text-slate-700 shrink-0">
+        <span className="font-mono text-slate-900 dark:text-slate-200 shrink-0">
           {pin.gps.lat.toFixed(5)}&deg;, {pin.gps.lng.toFixed(5)}&deg;
         </span>
       </div>
@@ -813,17 +813,17 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                 onBlur={() => handleSaveAuditNotes(auditNotesDraft)}
                 placeholder="Enter field observations, site conditions, access issues, or notes for the audit record..."
                 aria-label="Audit Notes"
-                className="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition resize-y min-h-[104px]"
+                className="w-full px-3.5 py-3 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-xl text-base sm:text-sm text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-slate-950 dark:focus:border-amber-400 focus:ring-2 focus:ring-amber-400/25 transition resize-y min-h-[104px]"
               />
             </div>
             {renderCapturedPinHint('auditNotes')}
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums">
-                <FileText className="w-3.5 h-3.5 text-slate-400" />
+              <div className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 tabular-nums">
+                <FileText className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                 <span>{auditNotesDraft.length} characters</span>
                 <span aria-hidden="true">&middot;</span>
-                <span className={hasUnsavedChanges ? 'font-semibold text-amber-700' : 'text-emerald-700 font-medium'}>
+                <span className={hasUnsavedChanges ? 'font-bold text-amber-700 dark:text-amber-400' : 'text-emerald-800 dark:text-emerald-400 font-semibold'}>
                   {hasUnsavedChanges ? 'Unsaved changes' : savedNotes ? 'Saved with project' : 'Ready'}
                 </span>
               </div>
@@ -838,7 +838,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         updateCounts({ auditNotes: '' });
                       }
                     }}
-                    className="min-h-[44px] px-3.5 py-2 text-xs font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 border border-slate-200 rounded-xl transition inline-flex items-center justify-center gap-1.5 flex-1 sm:flex-none"
+                    className="min-h-[44px] px-3.5 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 border border-slate-300 dark:border-slate-600 rounded-xl transition inline-flex items-center justify-center gap-1.5 flex-1 sm:flex-none"
                     title="Clear notes"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -850,7 +850,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   type="button"
                   onClick={() => handleSaveAuditNotes(auditNotesDraft)}
                   disabled={!hasUnsavedChanges}
-                  className="min-h-[44px] px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-500 text-white text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 flex-1 sm:flex-none"
+                  className="min-h-[44px] px-4 py-2 bg-slate-950 dark:bg-amber-400 hover:bg-slate-800 dark:hover:bg-amber-300 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-500 dark:disabled:text-slate-500 text-white dark:text-slate-950 text-xs font-bold rounded-xl transition inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 flex-1 sm:flex-none"
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>Save Notes</span>
@@ -867,7 +867,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
   const anyEnabled = anyStandardEnabled || enabledCustomItems.length > 0;
 
   const inputClass =
-    'w-full px-3 py-2 min-h-[42px] bg-white border border-slate-200 rounded-lg text-base sm:text-sm font-semibold text-slate-900 tabular-nums focus:outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 transition';
+    'w-full px-3 py-2 min-h-[42px] bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-lg text-base sm:text-sm font-semibold text-slate-950 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 tabular-nums focus:outline-none focus:border-slate-950 dark:focus:border-amber-400 focus:ring-2 focus:ring-amber-400/25 transition';
 
   const renderCardHeader = (
     fieldId: string,
@@ -884,22 +884,22 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
           type="button"
           onClick={() => toggleField(fieldId)}
           aria-expanded={!collapsed}
-          className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xl"
+          className="min-w-0 flex-1 text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400 rounded-xl"
         >
           <div className="flex items-baseline flex-wrap gap-x-2.5 gap-y-0.5">
-            <h3 className="font-bold text-slate-900 text-base group-hover:text-slate-700 transition">
+            <h3 className="font-bold text-slate-950 dark:text-white text-base group-hover:text-slate-700 dark:group-hover:text-amber-300 transition">
               {title}
             </h3>
-            <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
-              Unit &middot; <span className="font-mono text-slate-700">{unitLabel}</span>
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+              Unit &middot; <span className="font-mono text-slate-900 dark:text-amber-400">{unitLabel}</span>
             </span>
           </div>
           {collapsed ? (
-            <p className="text-xs font-semibold text-slate-700 mt-1 tabular-nums truncate">
+            <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-1 tabular-nums truncate">
               {collapsedSummary}
             </p>
           ) : (
-            <p className="text-xs text-slate-500 mt-1 leading-relaxed">{description}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{description}</p>
           )}
         </button>
 
@@ -910,10 +910,10 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
             aria-label={isFullscreen ? `Exit full screen for ${title}` : `Extend ${title} to full screen`}
             aria-pressed={isFullscreen}
             title={isFullscreen ? 'Restore card size (Esc)' : 'Extend to full screen'}
-            className={`w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+            className={`w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400 ${
               isFullscreen
-                ? 'bg-slate-900 text-white hover:bg-slate-800'
-                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                ? 'bg-slate-950 dark:bg-amber-400 text-white dark:text-slate-950 hover:bg-slate-800 dark:hover:bg-amber-300'
+                : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-600'
             }`}
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -925,7 +925,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
             aria-expanded={!collapsed}
             aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
             title={collapsed ? 'Expand card' : 'Collapse card'}
-            className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-200 flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400"
           >
             <ChevronDown
               className={`w-4 h-4 transition-transform duration-200 ${collapsed ? '-rotate-90' : 'rotate-0'}`}
@@ -954,7 +954,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
 
         {!collapsed && (
           <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between bg-slate-50/90 p-3.5 rounded-xl">
+            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 p-3.5 rounded-xl">
               <button
                 type="button"
                 onClick={() => {
@@ -962,13 +962,13 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   handleAdjustPost(postType, -1);
                 }}
                 aria-label={`Decrease ${title}`}
-                className="w-12 h-12 bg-white border border-slate-200 rounded-xl text-slate-700 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition duration-150 flex items-center justify-center active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                className="w-12 h-12 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-xl text-slate-900 dark:text-slate-100 hover:bg-rose-50 dark:hover:bg-rose-950/60 hover:text-rose-700 dark:hover:text-rose-400 hover:border-rose-300 dark:hover:border-rose-700 transition duration-150 flex items-center justify-center active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400"
               >
                 <Minus className="w-5 h-5" />
               </button>
               <div className="text-center px-3">
-                <div className="text-4xl font-extrabold text-slate-900 tabular-nums tracking-tight">{count}</div>
-                <div className="text-xs text-slate-500 font-medium mt-0.5">{unit} counted</div>
+                <div className="text-4xl font-extrabold text-slate-950 dark:text-white tabular-nums tracking-tight">{count}</div>
+                <div className="text-xs text-slate-600 dark:text-slate-300 font-semibold mt-0.5">{unit} counted</div>
               </div>
               <button
                 type="button"
@@ -977,7 +977,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                   handleAdjustPost(postType, 1);
                 }}
                 aria-label={`Increase ${title}`}
-                className="w-12 h-12 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl shadow-xs transition duration-150 flex items-center justify-center active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                className="w-12 h-12 bg-amber-400 hover:bg-amber-500 text-slate-950 rounded-xl shadow-xs transition duration-150 flex items-center justify-center active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -994,7 +994,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         void captureLocationForInput(postType, title, `${count + qty} ${unit}`);
                         handleAdjustPost(postType, qty);
                       }}
-                      className="min-h-[40px] py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-900 text-xs font-semibold rounded-lg tabular-nums active:scale-[0.97] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+                      className="min-h-[40px] py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-950 dark:text-slate-100 text-xs font-bold rounded-lg tabular-nums active:scale-[0.97] transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400"
                     >
                       +{qty}
                     </button>
@@ -1023,7 +1023,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                         handleAdjustPost(postType, qty);
                       }
                     }}
-                    className="min-h-[42px] px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition duration-150 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+                    className="min-h-[42px] px-4 py-2 bg-slate-950 dark:bg-amber-400 hover:bg-slate-800 dark:hover:bg-amber-300 text-white dark:text-slate-950 text-xs font-bold rounded-lg transition duration-150 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-amber-400"
                   >
                     <Plus className="w-4 h-4" />
                     <span>Add Bulk</span>
@@ -1032,7 +1032,7 @@ export const SimpleAuditDashboard: React.FC<SimpleAuditDashboardProps> = ({
                     <button
                       type="button"
                       onClick={() => handleAdjustPost(postType, -count)}
-                      className="min-h-[44px] min-w-[44px] p-2.5 text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 rounded-xl transition flex items-center justify-center shrink-0"
+                      className="min-h-[44px] min-w-[44px] p-2.5 text-slate-700 dark:text-slate-300 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/60 border border-slate-300 dark:border-slate-600 rounded-xl transition flex items-center justify-center shrink-0"
                       title="Reset to 0"
                       aria-label={`Reset ${title} to 0`}
                     >
